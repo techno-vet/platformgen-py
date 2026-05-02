@@ -222,6 +222,8 @@ if [ "$VENV_MODE" -eq 1 ]; then
     # Activate venv
     # shellcheck disable=SC1091
     source "$VENV_DIR/bin/activate"
+    export PATH="$VENV_DIR/bin:$PATH"
+    export AUGER_VENV_BIN="$VENV_DIR/bin"
 
     # Detect proxy (same logic as Docker mode)
     PROXY_URL=""
@@ -317,7 +319,7 @@ if [ "$VENV_MODE" -eq 1 ]; then
         fi
 
         echo "[START]  Starting Auger (venv mode) in the background..."
-        nohup env AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" python3 -m auger start \
+        nohup env AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m auger start \
             >> "$VENV_LOG_FILE" 2>&1 &
         _venv_pid=$!
         echo "$_venv_pid" > "$VENV_PID_FILE"
@@ -338,7 +340,7 @@ if [ "$VENV_MODE" -eq 1 ]; then
     echo "   To stop: Ctrl+C or close the window."
     echo ""
 
-    exec env AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" python3 -m auger start
+    exec env AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m auger start
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

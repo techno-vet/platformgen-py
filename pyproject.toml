@@ -66,6 +66,7 @@ Issues = "https://github.helix.gsa.gov/assist/auger-ai-sre-platform/issues"
 [project.scripts]
 auger = "auger.cli:cli_main"
 platformgen = "auger.cli:cli_main"
+genny = "auger.cli:cli_main"
 
 [tool.setuptools]
 packages = ["auger", "auger.ui", "auger.ui.widgets", "auger.tools", "auger.integrations", "auger.data"]

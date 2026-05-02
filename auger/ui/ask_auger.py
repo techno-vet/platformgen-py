@@ -1,4 +1,4 @@
-"""Ask Auger panel - AI agent interface running auger CLI."""
+"""Assistant panel - AI agent interface running the configured CLI."""
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -10,6 +10,7 @@ import re
 import json
 import os
 from pathlib import Path
+import sys
 from datetime import datetime, timedelta
 from dotenv import dotenv_values
 
@@ -35,7 +36,7 @@ class AskAugerPanel(tk.Frame):
         self._process = None
         self._last_prompt = ''  # original user prompt, stored for post-response footer
         
-        self._auger = shutil.which(cli_name()) or str(Path.home() / f".local/bin/{cli_name()}")
+        self._auger = self._resolve_cli_path()
         
         # History persistence
         self._history_dir = state_dir() / "logs" / "chat_history"
@@ -61,6 +62,21 @@ class AskAugerPanel(tk.Frame):
         self._start_session_health_poll()
         # Self-initialize from origin docs if this is a fresh install
         self.after(2000, self._maybe_self_initialize)
+
+    def _resolve_cli_path(self) -> str:
+        cli = cli_name()
+        candidates = [
+            shutil.which(cli),
+            os.environ.get("AUGER_CLI_PATH"),
+            os.path.join(os.environ.get("AUGER_VENV_BIN", ""), cli) if os.environ.get("AUGER_VENV_BIN") else None,
+            str(Path(sys.executable).resolve().parent / cli),
+            str(state_dir() / "venv" / "bin" / cli),
+            str(Path.home() / f".local/bin/{cli}"),
+        ]
+        for candidate in candidates:
+            if candidate and Path(candidate).exists():
+                return str(Path(candidate))
+        return str(Path.home() / f".local/bin/{cli}")
     
     def _build_ui(self):
         """Build the panel UI."""
