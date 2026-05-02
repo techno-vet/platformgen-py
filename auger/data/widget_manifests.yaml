@@ -178,6 +178,30 @@ widgets:
     auger_rules:
       - "Read-only exploration only — never kubectl apply/delete from container"
 
+  godaddy_dns:
+    title: "GoDaddy DNS"
+    purpose: "Lists GoDaddy-managed domains and edits DNS records from the PlatformGen desktop UI."
+    depends_on: [api_config]
+    used_by: []
+    key_data_files:
+      - "runtime state .env  (GODADDY_API_KEY, GODADDY_API_SECRET)"
+    auger_rules:
+      - "Use API Keys+ for GODADDY_API_KEY and GODADDY_API_SECRET"
+      - "Treat destructive DNS edits carefully; confirm domain and record names before applying changes"
+    session_resume_hint: "Reload domains after updating GoDaddy credentials in API Keys+"
+
+  ask_genny_local:
+    title: "Ask Genny (Local LLM)"
+    purpose: "Chats with the local Ollama-hosted Genny model so users can test Genny without a GitHub Copilot token."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "http://localhost:11434  (local Ollama endpoint)"
+    auger_rules:
+      - "Prefer the local Qwen2.5-Coder model when available for out-of-box testing"
+      - "Plain chat mode must work even when optional agent dependencies are not installed"
+    session_resume_hint: "Refresh Ollama models first if the widget shows offline"
+
   shell_terminal:
     title: "Bash $"
     purpose: "Embedded bash terminal inside the Auger platform container. Full shell access."

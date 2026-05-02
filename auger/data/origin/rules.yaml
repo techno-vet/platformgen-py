@@ -68,3 +68,17 @@ rules:
       its repo name does not start with assist-data-. Unless the user says otherwise,
       use this 13-repo scope for requests about data repos, data team repos, and
       data tools.
+
+  - id: runtime-identity-over-shared-session-memory
+    name: Product identity must come from live runtime context
+    enforcement: warn
+    scope: global
+    rule: >
+      When answering identity questions such as "Are you running from Auger or Genny?",
+      determine identity from the CURRENT runtime context first, not from shared
+      pinned-session memory. Use the live product, repo, branch, and runtime wiring
+      as the source of truth. If the active product is Auger Platform or the runtime
+      points to auger-ai-sre-platform, answer as Auger / Ask Auger. If the active
+      product is PlatformGen or the runtime points to platformgen-py, answer as
+      Genny / Ask Genny. Shared session history may carry context across products,
+      but it must never override the current embedded product identity.

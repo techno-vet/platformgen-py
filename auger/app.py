@@ -275,6 +275,17 @@ class AugerSREPlatform(tk.Tk):
                 ).APIConfigWidget
             )
         )
+
+        self.widgets_menu.add_command(
+            label="Ask Genny (Local LLM)",
+            command=lambda: self.content.add_widget_tab(
+                "Ask Genny (Local LLM)",
+                sys.modules.get(
+                    "auger.ui.widgets.ask_genny_local",
+                    __import__("auger.ui.widgets.ask_genny_local", fromlist=["AskGennyLocalWidget"])
+                ).AskGennyLocalWidget
+            )
+        )
         
         self.widgets_menu.add_command(
             label="Bash $",
@@ -409,6 +420,17 @@ class AugerSREPlatform(tk.Tk):
                     "auger.ui.widgets.k8s_explorer",
                     __import__("auger.ui.widgets.k8s_explorer", fromlist=["K8sExplorerWidget"])
                 ).K8sExplorerWidget
+            )
+        )
+
+        self.widgets_menu.add_command(
+            label="GoDaddy DNS",
+            command=lambda: self.content.add_widget_tab(
+                "GoDaddy DNS",
+                sys.modules.get(
+                    "auger.ui.widgets.godaddy_dns",
+                    __import__("auger.ui.widgets.godaddy_dns", fromlist=["GoDaddyDNSWidget"])
+                ).GoDaddyDNSWidget
             )
         )
 

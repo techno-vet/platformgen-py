@@ -10,13 +10,14 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 import requests
 from PIL import Image, ImageDraw, ImageTk
+from auger.runtime import state_dir
 try:
     from auger.ui.utils import auger_home as _auger_home
 except ImportError:
     def _auger_home(): return Path.home()
 
 
-ENV_FILE = _auger_home() / ".auger" / ".env"
+ENV_FILE = state_dir() / ".env"
 
 
 def _shared_atlassian_session(instance_url: str):
@@ -186,10 +187,15 @@ class APIConfigWidget(tk.Frame):
         
         # Add all sections
         self._add_jenkins_section()
+        self._add_openai_section()
+        self._add_cloudflare_section()
+        self._add_youtube_section()
+        self._add_godaddy_section()
         self._add_datadog_section()
         self._add_aws_section()
         self._add_rancher_section()
         self._add_github_section()
+        self._add_github_oauth_section()
         self._add_github_enterprise_section()
         self._add_jira_section()
         self._add_artifactory_section()
@@ -391,7 +397,19 @@ class APIConfigWidget(tk.Frame):
         
         self._add_field(section, "Jenkins URL:", "JENKINS_URL", default="https://jenkins-mcaas.helix.gsa.gov")
         self._add_field(section, "Username:", "JENKINS_USER")
+        self._add_field(section, "Password:", "JENKINS_PASSWORD", is_masked=True)
         self._add_field(section, "API Token:", "JENKINS_API_TOKEN", is_masked=True)
+
+        help_label = tk.Label(
+            section,
+            text="Supports either password auth or API token auth. PlatformGen was missing the password field.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
         
         self._add_test_button(section, self._test_jenkins)
         self._add_divider()
@@ -401,9 +419,11 @@ class APIConfigWidget(tk.Frame):
         url = self.entries['JENKINS_URL'].get().strip()
         user = self.entries['JENKINS_USER'].get().strip()
         token = self.entries['JENKINS_API_TOKEN'].get().strip()
+        password = self.entries['JENKINS_PASSWORD'].get().strip()
+        secret = token or password
         
-        if not url or not user or not token:
-            self._log("Jenkins: URL, username, and API token required", 'err')
+        if not url or not user or not secret:
+            self._log("Jenkins: URL, username, and API token or password required", 'err')
             return
         
         try:
@@ -412,7 +432,7 @@ class APIConfigWidget(tk.Frame):
             # Test with /api/json endpoint (basic authentication)
             resp = requests.get(
                 f"{url.rstrip('/')}/api/json",
-                auth=(user, token),
+                auth=(user, secret),
                 timeout=10
             )
             
@@ -432,6 +452,217 @@ class APIConfigWidget(tk.Frame):
             self._log("Jenkins: ✗ Connection timeout", 'err')
         except Exception as e:
             self._log(f"Jenkins: ✗ Error: {str(e)[:80]}", 'err')
+
+    def _add_openai_section(self):
+        """Add OpenAI section."""
+        self._add_section_header("OpenAI", "https://platform.openai.com/api-keys")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "API Key:", "OPENAI_API_KEY", is_masked=True)
+
+        help_label = tk.Label(
+            section,
+            text="Used by PlatformGen AI widgets and demos that target OpenAI-compatible models.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        self._add_test_button(section, self._test_openai)
+        self._add_divider()
+
+    def _test_openai(self):
+        """Test OpenAI API key."""
+        api_key = self.entries['OPENAI_API_KEY'].get().strip()
+
+        if not api_key:
+            self._log("OpenAI: API key required", 'err')
+            return
+
+        try:
+            self._log("OpenAI: Testing...", 'info')
+            resp = requests.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                self._log("OpenAI: ✓ Connection successful", 'ok')
+            elif resp.status_code == 401:
+                self._log("OpenAI: ✗ Invalid API key", 'err')
+            else:
+                self._log(f"OpenAI: ✗ Unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log("OpenAI: ✗ Cannot reach api.openai.com", 'err')
+        except requests.exceptions.Timeout:
+            self._log("OpenAI: ✗ Connection timeout", 'err')
+        except Exception as e:
+            self._log(f"OpenAI: ✗ Error: {str(e)[:80]}", 'err')
+
+    def _add_cloudflare_section(self):
+        """Add Cloudflare section."""
+        self._add_section_header("Cloudflare", "https://dash.cloudflare.com/profile/api-tokens")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "API Token:", "CLOUDFLARE_API_TOKEN", is_masked=True)
+        self._add_field(section, "Account ID:", "CLOUDFLARE_ACCOUNT_ID")
+
+        help_label = tk.Label(
+            section,
+            text="Used for DNS and related Cloudflare operations. Token should include the scopes your flows need.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        self._add_test_button(section, self._test_cloudflare)
+        self._add_divider()
+
+    def _test_cloudflare(self):
+        """Test Cloudflare API token."""
+        token = self.entries['CLOUDFLARE_API_TOKEN'].get().strip()
+
+        if not token:
+            self._log("Cloudflare: API token required", 'err')
+            return
+
+        try:
+            self._log("Cloudflare: Testing...", 'info')
+            resp = requests.get(
+                "https://api.cloudflare.com/client/v4/user/tokens/verify",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            if resp.status_code == 200 and resp.json().get("success"):
+                self._log("Cloudflare: ✓ Token verified", 'ok')
+            elif resp.status_code == 403:
+                self._log("Cloudflare: ✗ Token rejected", 'err')
+            else:
+                self._log(f"Cloudflare: ✗ Unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log("Cloudflare: ✗ Cannot reach Cloudflare API", 'err')
+        except requests.exceptions.Timeout:
+            self._log("Cloudflare: ✗ Connection timeout", 'err')
+        except Exception as e:
+            self._log(f"Cloudflare: ✗ Error: {str(e)[:80]}", 'err')
+
+    def _add_youtube_section(self):
+        """Add YouTube API section."""
+        self._add_section_header("YouTube", "https://console.cloud.google.com/apis/credentials")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "API Key:", "YOUTUBE_API_KEY", is_masked=True)
+
+        help_label = tk.Label(
+            section,
+            text="Used by OpenJuke and related video-search flows. This fixes the missing/hidden key field from Trader sync.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        self._add_test_button(section, self._test_youtube)
+        self._add_divider()
+
+    def _test_youtube(self):
+        """Test YouTube Data API key."""
+        api_key = self.entries['YOUTUBE_API_KEY'].get().strip()
+
+        if not api_key:
+            self._log("YouTube: API key required", 'err')
+            return
+
+        try:
+            self._log("YouTube: Testing...", 'info')
+            resp = requests.get(
+                "https://www.googleapis.com/youtube/v3/videoCategories",
+                params={"part": "snippet", "regionCode": "US", "key": api_key},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                self._log("YouTube: ✓ API key accepted", 'ok')
+            elif resp.status_code == 400:
+                self._log("YouTube: ✗ Invalid API key or API not enabled", 'err')
+            else:
+                self._log(f"YouTube: ✗ Unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log("YouTube: ✗ Cannot reach Google APIs", 'err')
+        except requests.exceptions.Timeout:
+            self._log("YouTube: ✗ Connection timeout", 'err')
+        except Exception as e:
+            self._log(f"YouTube: ✗ Error: {str(e)[:80]}", 'err')
+
+    def _add_godaddy_section(self):
+        """Add GoDaddy section."""
+        self._add_section_header("GoDaddy DNS", "https://developer.godaddy.com/keys")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "API Key:", "GODADDY_API_KEY", is_masked=True)
+        self._add_field(section, "API Secret:", "GODADDY_API_SECRET", is_masked=True)
+
+        help_label = tk.Label(
+            section,
+            text="Shared with the GoDaddy DNS widget for listing domains and editing DNS records.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        self._add_test_button(section, self._test_godaddy)
+        self._add_divider()
+
+    def _test_godaddy(self):
+        """Test GoDaddy API credentials."""
+        api_key = self.entries['GODADDY_API_KEY'].get().strip()
+        api_secret = self.entries['GODADDY_API_SECRET'].get().strip()
+
+        if not api_key or not api_secret:
+            self._log("GoDaddy: API key and secret required", 'err')
+            return
+
+        try:
+            self._log("GoDaddy: Testing...", 'info')
+            resp = requests.get(
+                "https://api.godaddy.com/v1/domains",
+                headers={
+                    "Authorization": f"sso-key {api_key}:{api_secret}",
+                    "Accept": "application/json",
+                },
+                params={"limit": 1},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                self._log("GoDaddy: ✓ Connection successful", 'ok')
+            elif resp.status_code in (401, 403):
+                self._log("GoDaddy: ✗ Invalid credentials", 'err')
+            else:
+                self._log(f"GoDaddy: ✗ Unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log("GoDaddy: ✗ Cannot reach GoDaddy API", 'err')
+        except requests.exceptions.Timeout:
+            self._log("GoDaddy: ✗ Connection timeout", 'err')
+        except Exception as e:
+            self._log(f"GoDaddy: ✗ Error: {str(e)[:80]}", 'err')
     
     def _add_datadog_section(self):
         """Add Datadog section."""
@@ -805,6 +1036,45 @@ class APIConfigWidget(tk.Frame):
         help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
         
         self._add_test_button(section, self._test_github)
+        self._add_divider()
+
+    def _add_github_oauth_section(self):
+        """Add GitHub OAuth app section for PlatformGen web login."""
+        self._add_section_header("GitHub OAuth App (PlatformGen Login)", "https://github.com/organizations/techno-vet/settings/applications")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "Client ID:", "GITHUB_OAUTH_CLIENT_ID")
+        self._add_field(section, "Client Secret:", "GITHUB_OAUTH_CLIENT_SECRET", is_masked=True)
+
+        help_label = tk.Label(
+            section,
+            text="Used by PlatformGen /hub login flows. Callback URL should match the deployed web app configuration.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        button_frame = tk.Frame(section, bg='#1e1e1e')
+        button_frame.pack(fill=tk.X, pady=(4, 0))
+
+        oauth_btn = tk.Frame(button_frame, bg='#3c3c3c', cursor='hand2')
+        oauth_btn.pack(side=tk.RIGHT)
+        oauth_btn.bind('<Button-1>', lambda e: self._open_url("https://github.com/organizations/techno-vet/settings/applications"))
+
+        oauth_inner = tk.Frame(oauth_btn, bg='#3c3c3c', cursor='hand2')
+        oauth_inner.pack(padx=15, pady=6)
+        oauth_inner.bind('<Button-1>', lambda e: self._open_url("https://github.com/organizations/techno-vet/settings/applications"))
+
+        oauth_text = tk.Label(oauth_inner, text="Open OAuth App Settings", font=('Segoe UI', 9, 'bold'),
+                              fg='#e0e0e0', bg='#3c3c3c', cursor='hand2')
+        oauth_text.pack(side=tk.LEFT)
+        oauth_text.bind('<Button-1>', lambda e: self._open_url("https://github.com/organizations/techno-vet/settings/applications"))
+
         self._add_divider()
     
     def _test_github(self):
