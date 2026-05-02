@@ -1,0 +1,9 @@
+#!/bin/bash
+# Entry point: runs the Auger install wizard without needing to type 'python3' or '.py'
+# Detaches from terminal so the prompt returns immediately.
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+mkdir -p "$HOME/.auger"
+echo "🔩  Opening Auger SRE Platform Setup wizard..."
+echo "    (This window will appear on your desktop — your terminal is free to use)"
+nohup python3 "$SCRIPT_DIR/install_wizard.py" "$@" </dev/null >"$HOME/.auger/install_wizard.log" 2>&1 &
+echo "    Log: ~/.auger/install_wizard.log  (PID $!)"

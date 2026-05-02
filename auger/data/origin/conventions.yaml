@@ -1,0 +1,72 @@
+# Auger Platform — Team Conventions
+# Auger auto-applies these when creating branches, commits, PRs.
+conventions:
+  - id: feature-branch-naming
+    name: Feature branch naming
+    category: branch
+    pattern: "feature/{jira_story}-{slug}"
+    jira_variable: jira_story
+    description: >
+      Always create a feature branch before pushing to main or a release branch.
+      If a Jira story is active in the Jira widget, use its number automatically.
+      If no Jira context exists, ask: "Is this work for a Jira story? [Enter story number / Skip]"
+    examples:
+      - "feature/SRE-123-fix-auth-timeout"
+      - "feature/update-flux-replica-count"
+
+  - id: commit-message-prefix
+    name: Conventional commit prefix
+    category: commit
+    pattern: "{type}: {short_description}"
+    description: >
+      Use conventional commit prefixes. Auger will suggest the correct type.
+      Types: feat, fix, chore, docs, refactor, hotfix
+    examples:
+      - "feat: add rules/conventions widget"
+      - "fix: tasks widget missing import"
+
+  - id: release-branch-naming
+    name: Release branch naming
+    category: branch
+    pattern: "{PROJECT}-{major}.{minor}.{patch}.{build}-{ENV}"
+    description: >
+      Release branches follow strict naming for deployment tracking.
+      Auger validates this pattern before allowing release branch creation.
+    examples:
+      - "SRE-1.2.3.4-PROD"
+      - "ASSIST-2.0.1.0-UAT"
+
+  - id: widget-hot-reload-before-commit
+    name: Hot-reload widget changes before committing
+    category: workflow
+    pattern: "write file → verify live in app → commit"
+    description: >
+      Widget files (auger/ui/widgets/*.py) hot-reload within ~1 second while the
+      app is running. Always write the file change first, wait for the user to
+      visually confirm it looks correct in the running app, THEN commit.
+      Never commit a widget change without a visual sign-off first.
+      Exception: non-visual changes (bug fixes, data logic) may commit directly.
+    examples:
+      - "Edit image_lab.py → see it reload → 'looks good' → git commit"
+      - "Fix panner bug → no visual needed → commit immediately"
+
+  - id: widget-must-have-icon-func
+    name: Every widget must define WIDGET_ICON_FUNC
+    category: widget
+    pattern: "WIDGET_ICON_FUNC = staticmethod(make_icon)"
+    description: >
+      Every widget class must define a module-level make_icon(size, color) function
+      and assign it as WIDGET_ICON_FUNC = staticmethod(make_icon). This PIL function
+      renders the tab icon shown in the Auger app bar. The icon should be SRE-relevant
+      and visually distinct. It is called with size=18 for tabs.
+      New AI-generated widgets must also include make_icon.
+    examples:
+      - |
+        def make_icon(size=18, color="#2ea043"):
+            from PIL import Image, ImageDraw
+            img = Image.new("RGBA", (size, size), (0,0,0,0))
+            d = ImageDraw.Draw(img)
+            # draw something meaningful...
+            return img
+        class MyWidget(tk.Frame):
+            WIDGET_ICON_FUNC = staticmethod(make_icon)

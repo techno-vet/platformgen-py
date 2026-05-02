@@ -1,0 +1,31 @@
+# Auger Platform — Team Standards
+# Reference documents Auger cites when answering questions.
+standards:
+  - id: flux-deployment-process
+    name: Flux Deployment Process
+    description: >
+      Production deployments use Flux GitOps. Never use kubectl apply directly
+      for FCS/prod changes. All production changes must go through a PR to
+      assist-prod-flux-config with 2 approvals.
+    content: >
+      Standard process:
+      1. Make change in app repo (feature branch -> PR -> merge)
+      2. Update image tag in assist-prod-flux-config
+      3. PR requires 2 approvals before merge
+      4. Flux auto-reconciles within 5 minutes of merge
+
+  - id: on-call-escalation
+    name: On-Call Escalation Path
+    description: Escalation contacts and procedures for on-call SREs
+    content: >
+      P1 (service down): Page on-call -> 15 min -> escalate to lead
+      P2 (degraded): Create Jira ticket, update status page
+      P3 (minor): Create Jira ticket, handle next business day
+
+  - id: slo-targets
+    name: SLO Targets
+    description: Service Level Objectives for platform services
+    content: >
+      Auger Platform: 99.5% availability (planned maintenance excluded)
+      API response time: p95 < 2s, p99 < 5s
+      Flux reconciliation: < 5 min after merge

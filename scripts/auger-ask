@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""
+Auger Ask - Quick GitHub Copilot wrapper
+Can be used standalone or symlinked for easy access
+
+Usage:
+  auger-ask "how do I deploy?"
+  auger-ask  (opens GUI)
+"""
+import sys
+import subprocess
+
+def run_copilot(prompt):
+    """Run gh copilot with the given prompt"""
+    try:
+        subprocess.run(
+            ["gh", "copilot", "-p", prompt, "--allow-all", "--silent", "--continue"],
+            check=False
+        )
+    except FileNotFoundError:
+        print("❌ Error: 'gh' command not found")
+        print("\nPlease install GitHub CLI:")
+        print("  https://cli.github.com/")
+        print("\nThen install copilot extension:")
+        print("  gh extension install github/gh-copilot")
+        sys.exit(1)
+
+def show_ui():
+    """Show GUI prompt window"""
+    import tkinter as tk
+    from tkinter import scrolledtext
+
+    root = tk.Tk()
+    root.title("Auger - Ask Copilot")
+    root.geometry("600x400")
+
+    frame = tk.Frame(root, padx=10, pady=10)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    tk.Label(frame, text="Enter your prompt:").pack(anchor="w")
+
+    text_input = scrolledtext.ScrolledText(frame, wrap=tk.WORD, height=15)
+    text_input.pack(fill=tk.BOTH, expand=True, pady=(4, 8))
+    text_input.focus()
+
+    def on_ask():
+        prompt = text_input.get("1.0", tk.END).strip()
+        if prompt:
+            root.destroy()
+            run_copilot(prompt)
+
+    def on_enter(event):
+        # Ctrl+Enter submits
+        if event.state & 0x4:  # Control key
+            on_ask()
+
+    text_input.bind('<Control-Return>', on_enter)
+
+    button_frame = tk.Frame(frame)
+    button_frame.pack(anchor="e")
+    
+    tk.Label(button_frame, text="Tip: Ctrl+Enter to submit", 
+            fg="gray", font=("Arial", 9)).pack(side=tk.LEFT, padx=(0, 10))
+    tk.Button(button_frame, text="Ask", command=on_ask, width=12).pack(side=tk.RIGHT)
+
+    root.mainloop()
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        run_copilot(" ".join(sys.argv[1:]))
+    else:
+        show_ui()

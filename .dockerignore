@@ -1,0 +1,14 @@
+# Node modules — symlink on host, not needed in image (installed in Dockerfile)
+auger/ui/widgets/node_modules
+
+# Python cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Git
+.git
+
+# Logs and runtime files
+logs/
+*.log

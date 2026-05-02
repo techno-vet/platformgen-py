@@ -1,0 +1,166 @@
+# Google Chat space members
+# user_id is the Google Chat numeric ID used for @mentions
+
+users:
+- user_id: '115892876533393851744'
+  email: arvind.nadikatla@gsa.gov
+  name: ARVINDKUMAR NADIKATLA - IDQBF-C
+- user_id: '102743981204341325442'
+  email: alpesh.virani@gsa.gov
+  name: Alpesh Virani - IDQBF-C
+- user_id: '102458106881799535440'
+  email: anil.mishra@gsa.gov
+  name: Anil Mishra - IDQBF-C
+- user_id: '112520130332796568402'
+  email: apparao.pathuri@gsa.gov
+  name: Appa Rao Pathuri - IDQBF-C
+- user_id: '108776667581822183627'
+  email: arshiya.khaleeluddin@gsa.gov
+  name: Arshiya Khaleeluddin - IDQBF-C
+- user_id: '107610097290027893000'
+  email: arunajyothi.bhumireddy@gsa.gov
+  name: Arunajyothi Bhumireddy - IDQBF-C-C
+- user_id: '114225119980126007231'
+  email: ashok.manchikalapudi@gsa.gov
+  name: Ashok Manchikalapudi - IDQBF-C
+- user_id: '100018957812996575462'
+  email: avani.patel@gsa.gov
+  name: Avani Patel - IDQBF-C
+- user_id: '107538671069837501767'
+  email: bobby.blair@gsa.gov
+  name: Bobby Blair - IDQBF-C
+- user_id: '101669758298497299545'
+  email: chandrasekhar.reddy@gsa.gov
+  name: Chandrasekhar Reddy - IDQBF-C
+- user_id: '101835590706746267973'
+  email: haswanth.panguluri@gsa.gov
+  name: Haswanth Panguluri - IDQBF-C
+- user_id: '105818124847801199342'
+  email: ilgar.yusifli@gsa.gov
+  name: Ilgar Yusifli - IDQBF-C
+- user_id: '102205098958119158365'
+  email: james.sundarrajan@gsa.gov
+  name: James Sundarrajan - IDQBF-C
+- user_id: '101590153815383650414'
+  email: jason.fulmer@gsa.gov
+  name: Jason Fulmer - IDQBF-C
+- user_id: '107083792660656077419'
+  email: jayasantoshi.bathini@gsa.gov
+  name: Jaya Santoshi Bathini - IDQBF-C
+- user_id: '115676077671714530286'
+  email: jeffery.hagemeier@gsa.gov
+  name: Jeffery Hagemeier - IDQBF-C
+- user_id: '117550221047667893564'
+  email: jeremy.howg@gsa.gov
+  name: Jeremy Howg - IDQBF-C
+- user_id: '107451377472429968379'
+  email: jhansilakshmi.chidambaram@gsa.gov
+  name: JhansiLakshmi Chidambaram - IDQBF-C
+- user_id: '114244237190504251044'
+  email: julie.swango@gsa.gov
+  name: Julie Swango - IDQBF-C
+- user_id: '101735088467267268344'
+  email: justin.milan@gsa.gov
+  name: Justin Milan - IDQBF-C
+- user_id: '110317823366836984727'
+  email: jyothisree.gadey@gsa.gov
+  name: Jyothi Sree Gadey - IDQBF-C
+- user_id: '106669521101103659678'
+  email: kranthikumar.nammayalwar@gsa.gov
+  name: Kranthikumar Nammayalwar - IDQBF-C
+- user_id: '114289273806997692094'
+  email: lei.luo@gsa.gov
+  name: Lei Luo - IDQBF-C
+- user_id: '116993404157201571817'
+  email: mahalakshmi.lakshminarayanan@gsa.gov
+  name: Mahalakshmi Lakshminarayanan - IDQBF-C
+- user_id: '104482016375469160238'
+  email: marcos.delgado@gsa.gov
+  name: Marcos Delgado - IDQBF-C
+- user_id: '105008694809484361129'
+  email: md.alam@gsa.gov
+  name: Md Alam - IDQBF-C
+- user_id: '100879344066308893567'
+  email: michael.lackey@gsa.gov
+  name: Michael Lackey - IDQBF-C
+- user_id: '105493002341361350203'
+  email: mile.dragisic@gsa.gov
+  name: Mile Dragisic - IDQBF-C-C
+- user_id: '109581673280991055265'
+  email: mohamed.kermiche@gsa.gov
+  name: Mohamed Kermiche - IDQBF-C
+- user_id: '110321827309558513709'
+  email: naqib.hossain@gsa.gov
+  name: Naqib Hossain - IDQBF-C
+- user_id: '111280508227460720962'
+  email: parth.d.patel@gsa.gov
+  name: Parth Patel
+- user_id: '117618062559685088933'
+  email: paul.ordonez@gsa.gov
+  name: Paul Ordonez - IDQBF-C
+- user_id: '113473230021564369288'
+  email: prerak.patel@gsa.gov
+  name: Prerak Patel - IDQBF-C
+- user_id: '112530458813716897575'
+  email: rachana.thalla@gsa.gov
+  name: Rachana Thalla - IDQBF-C-C
+- user_id: '101918876322183522641'
+  email: ramin.rad@gsa.gov
+  name: Ramin Rad
+- user_id: '114734684409611335208'
+  email: ranjana.tripathi@gsa.gov
+  name: Ranjana Tripathi - IDQBF-C
+- user_id: '111762038294899051323'
+  email: richard.holleman@gsa.gov
+  name: Richard Holleman - IDQBF-C
+- user_id: '110016791780898639579'
+  email: samir.bham@gsa.gov
+  name: Samir Bham - IDQBF-C
+- user_id: '118269996177775113737'
+  email: sandip.nakrani@gsa.gov
+  name: Sandip Nakrani - IDQBF-C
+- user_id: '117160113971651062891'
+  email: sarah.rodriguez@gsa.gov
+  name: Sarah Rodriguez - IDQBF-C
+- user_id: '106266123379166368165'
+  email: sebastian.basch@gsa.gov
+  name: Sebastian Basch - IDQBF-C
+- user_id: '107879951719310034774'
+  email: shaunak.ashtaputre@gsa.gov
+  name: Shaunak Ashtaputre - IDQBF-C
+- user_id: '110997942819492421341'
+  email: srinivas.sanagapalli@gsa.gov
+  name: Srinivas Sanagapalli
+- user_id: '112849881217702344159'
+  email: sriram.asuri@gsa.gov
+  name: Sriram Asuri - IDQBF-C
+- user_id: '100005340495370603461'
+  email: steven.prather@gsa.gov
+  name: Steven Prather - IDQBF-C-C
+- user_id: '109948551709942080213'
+  email: thomas.panning@gsa.gov
+  name: Thomas Panning - IDQBF-C
+- user_id: '116005827259020710932'
+  email: timothy.britten@gsa.gov
+  name: Timothy Britten - IDQBF-C
+- user_id: '102194130846347002608'
+  email: van.diep@gsa.gov
+  name: Van Diep - IDQBF-C
+- user_id: '102628975012919966451'
+  email: venus.miskinyar@gsa.gov
+  name: Venus Miskinyar - IDQBF-C
+- user_id: '107967638791140583177'
+  email: vijethachowdary.muthyala@gsa.gov
+  name: Vijetha Chowdary Muthyala - IDQBF-C
+- user_id: '103904142541975422364'
+  email: vineela.aitha@gsa.gov
+  name: Vineela Aitha - IDQBF-C
+- user_id: '108465000841813176686'
+  email: wassila.benhenia@gsa.gov
+  name: Wassila Benhenia - IDQBF-C
+- user_id: '107149407075948819346'
+  email: zheng.zhou@gsa.gov
+  name: Zheng Zhou - IDQBF-C
+- user_id: '109051006507360866908'
+  email: anuj.christian@gsa.gov
+  name: Anuj Christian - IDQBF-C

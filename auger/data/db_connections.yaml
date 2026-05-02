@@ -1,0 +1,39 @@
+# Auger Database Widget - Connection Configuration (GENERIC TEMPLATE)
+#
+# This file demonstrates the structure for database connections.
+# Fill in your own connections below.
+#
+# CONVENTIONS:
+#   - workbench: namespace-level connections shown in Workbench tab (main user)
+#   - service_credentials: per-service users for Connections tab reference
+#
+# TYPE: Add your database type (postgresql, mysql, sqlite, etc.)
+# HOST: Database hostname or connection string
+# PORT: Database port number
+# DATABASE: Database name
+# DEFAULT_USER: Primary user for connections
+# SSL_MODE: Connection security (require, prefer, disable)
+
+workbench:
+  # Add your workbench database connections here
+  # Example structure:
+  #
+  # - name: my_db
+  #   label: "My Database"
+  #   env: development
+  #   type: postgresql
+  #   host: your-db-host.example.com
+  #   port: 5432
+  #   database: your_database_name
+  #   default_user: your_user
+  #   ssl_mode: require
+
+service_credentials:
+  # Add service-specific credentials here
+  # Example structure:
+  #
+  # - env: development
+  #   service: my_service
+  #   user: service_user
+  #   database: your_database_name
+  #   enc_password: "YOUR_ENCRYPTED_PASSWORD_HERE"

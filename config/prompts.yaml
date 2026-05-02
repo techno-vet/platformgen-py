@@ -1,0 +1,945 @@
+# Auger Platform — Default Prompt Library
+#
+# Schema per prompt:
+#   id:          unique snake_case identifier
+#   name:        display name in dropdown
+#   category:    grouping label (shown as header in selector)
+#   backend:     copilot | shell_container | shell_host
+#   icon:        icon name from icons.py (optional)
+#   description: tooltip / short description
+#   template:    prompt/command text. Use {PARAM} for required,
+#                {?PARAM} for optional (omitted when empty).
+#   params:      list of parameter definitions (see types below)
+#
+# Param types:
+#   text           — free-form Entry field
+#   validated_text — Entry with regex validation (pattern, error_msg)
+#   dropdown       — Combobox with fixed choices list
+#   dynamic        — Combobox populated by source_cmd at runtime;
+#                    use {DEP} in source_cmd to reference another param value.
+#                    depends_on: OtherParam re-runs source_cmd when dep changes.
+#
+# Optional params: set optional: true. {?PARAM} in template is replaced with
+# the param value if non-empty, or removed (including surrounding whitespace)
+# if empty.  Use prefix/suffix to wrap the value in additional text.
+#
+# User overrides: copy to ~/.auger/prompts.yaml and add/replace prompts.
+# Prompts with the same id in the user file override the repo defaults.
+
+prompts:
+
+  # ── Git Workflow ────────────────────────────────────────────────────────────
+
+  - id: merge_all_repos_to_main
+    name: "Merge Branch → Main (All Repos)"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: >
+      Merge a branch into main across every repository that contains it.
+      Optionally create a new release branch in each merged repo.
+    template: |
+      For every repository under ~/repos that contains the branch {Branch}:
+      1. Review the diff between {Branch} and main.
+      2. Summarize what is being merged and check for obvious conflicts or issues.
+      3. Perform the merge of {Branch} into main.
+      {?NEW_RELEASE_BRANCH}
+      Work through each repository one at a time and report the result for each.
+    params:
+      - name: Branch
+        type: dynamic
+        label: "Branch (merged in all repos that have it)"
+        source_cmd: >
+          find ~/repos -maxdepth 3 -name HEAD -path '*/.git/HEAD' 2>/dev/null |
+          xargs -I{} dirname {} |
+          xargs -I{} git -C {} branch -r 2>/dev/null |
+          sed 's|.*origin/||' | grep -v HEAD | sort -u
+
+      - name: NEW_RELEASE_BRANCH
+        type: validated_text
+        label: "New Release Branch (optional, created in each merged repo)"
+        optional: true
+        placeholder: "e.g. ASSIST-1.2.3.4-DME"
+        prefix: "After merging, also create release branch release/"
+        suffix: " from main in each repository that was successfully merged."
+        validation:
+          pattern: "^[A-Z][A-Z0-9_]+-\\d+\\.\\d+\\.\\d+\\.\\d+-[A-Z][A-Z0-9_]+$"
+          error_msg: "Must match FORMAT-N.N.N.N-TAG  (e.g. ASSIST-4.0.0.0-DME)"
+        suggest_cmd: >
+          find ~/repos -maxdepth 3 -name HEAD -path '*/.git/HEAD' 2>/dev/null |
+          xargs -I{} dirname {} |
+          xargs -I{} git -C {} branch -r 2>/dev/null |
+          grep 'release/' | sed 's|.*release/||' |
+          grep -E '^[A-Z]' | sort -u -t. -k2,2rn -k3,3rn -k4,4rn | head -20
+
+  - id: merge_to_main
+    name: "Merge To Main"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: >
+      Merge a branch into main for a given repo. Optionally create a new
+      release branch from main after the merge.
+    template: |
+      Merge branch {Branch} into main for the repository {Repo}.
+      Review the diff, summarize what is being merged, check for any obvious
+      conflicts or issues, then perform the merge.
+      {?NEW_RELEASE_BRANCH}
+    params:
+      - name: Repo
+        type: dynamic
+        label: "Repository"
+        source_cmd: "ls ~/repos"
+        sort: alpha
+
+      - name: Branch
+        type: dynamic
+        label: "Branch"
+        source_cmd: "git -C ~/repos/{Repo} branch -r --sort=-committerdate 2>/dev/null | sed 's|.*origin/||' | grep -v HEAD | head -40"
+        depends_on: Repo
+
+      - name: NEW_RELEASE_BRANCH
+        type: validated_text
+        label: "New Release Branch (optional)"
+        optional: true
+        placeholder: "e.g. ASSIST-1.2.3.4-DME"
+        prefix: "After merging, also create release branch release/"
+        suffix: " from main."
+        validation:
+          pattern: "^[A-Z][A-Z0-9_]+-\\d+\\.\\d+\\.\\d+\\.\\d+-[A-Z][A-Z0-9_]+$"
+          error_msg: "Must match FORMAT-N.N.N.N-TAG  (e.g. ASSIST-4.0.0.0-DME)"
+        # Existing release branches are suggested sorted newest-version-first
+        suggest_cmd: "git -C ~/repos/{Repo} branch -r 2>/dev/null | sed 's|.*origin/release/||' | grep -E '^[A-Z]' | sort -t. -k1,1 -k2,2rn -k3,3rn -k4,4rn | head -20"
+        suggest_depends_on: Repo
+
+  - id: data_tools_release_sync
+    name: "Data Tools Release Sync"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: >
+      Optionally sync a deployed data-tools release branch back into main
+      across the data-team repos, then create the next release branch where
+      needed.
+    template: |
+      Use the established data-team/data-tools repo scope only:
+      assist-jupyterhub, assist-data-utils, assist-data-data-catalog,
+      assist-data-airflow, assist-data-pipeline,
+      assist-data-data-pipeline-dags, assist-data-ai-tools,
+      assist-data-data-catalog-crawler,
+      assist-data-kafka-consumer, assist-data-debezium,
+      and assist-data-api-service.
+      Explicitly exclude assist-data-api-service-automated-test.
+
+      Work repository by repository.
+
+      If Branch is provided:
+      1. Confirm whether that deployed release branch exists.
+      2. Compare it against main.
+      3. If the release branch contains commits not yet in main, create or update the PR needed to merge that deployed release branch back into main, and summarize any conflicts, blockers, or manual follow-up required.
+      4. If main is already equal to or ahead of the release branch, report that no merge is needed.
+
+      In all cases:
+      5. Create release branch release/{NEXT_RELEASE_BRANCH} from main for every in-scope data-tools repository, even if that repository has no code changes for this release line yet.
+      6. If Branch is blank, skip merge-back analysis and PR work entirely.
+      7. Treat release branches as a synchronized line across the full data-tools repo set from this point forward.
+      8. Do not apply any special out-of-cycle (OOC) workflow automatically; if the situation appears OOC, call it out explicitly for human review because OOC handling will be managed separately.
+      9. Finish with a concise per-repo status summary showing: deployed branch present or skipped, merge needed or not needed, PR created or already merged, and next-release branch created or already present.
+    params:
+      - name: Branch
+        type: dynamic
+        label: "Deployed Branch"
+        optional: true
+        source_cmd: >
+          find ~/repos -maxdepth 3 -name HEAD -path '*/.git/HEAD' 2>/dev/null |
+          xargs -I{} dirname {} |
+          xargs -I{} git -C {} branch -r 2>/dev/null |
+          sed 's|.*origin/||' | grep -v HEAD | sort -u
+
+      - name: NEXT_RELEASE_BRANCH
+        type: validated_text
+        label: "Next Release Branch"
+        ui_prefix: "release/"
+        placeholder: "DATA_1.7.0.0 or DATA_1.6.0.0_DME"
+        validation:
+          pattern: "^[A-Z][A-Z0-9_]*_\\d+\\.\\d+\\.\\d+\\.\\d+(?:_[A-Z][A-Z0-9_]*)?$"
+          error_msg: "Must look like DATA_1.7.0.0 or DATA_1.6.0.0_DME"
+
+  - id: data_tools_flux_release_prs
+    name: "Data Tools Flux Release PRs"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: >
+      Create deploy-automation-targeted dev/staging Flux PRs for a deployed
+      data-tools release using Jenkins/Prospector image tags while preserving
+      current environment state.
+    template: |
+      Use assist-flux-config only.
+      Follow the established global data-tools Flux release PR conventions.
+
+      Treat the data-team/data-tools repo scope as:
+      assist-jupyterhub, assist-data-utils, assist-data-data-catalog,
+      assist-data-airflow, assist-data-pipeline,
+      assist-data-data-pipeline-dags, assist-data-ai-tools,
+      assist-data-data-catalog-crawler,
+      assist-data-kafka-consumer, assist-data-debezium,
+      and assist-data-api-service.
+      Explicitly exclude assist-data-api-service-automated-test.
+
+      Use successful Jenkins/Prospector builds for release/{RELEASE_BRANCH} as the
+      source of truth for exact image tags.
+      Create PRs against deploy-automation only, never main.
+
+      Target environments: {TARGET_ENVS}.
+      Runtime image refresh requested: {UPDATE_RUNTIME_IMAGES}.
+      Dry run only: {DRY_RUN_ONLY}.
+      Review summary requested: {POST_REVIEW_SUMMARY}.
+      {?JIRA_STORY}
+
+      Work environment by environment.
+      1. Discover which in-scope workloads are active, ignored, or absent in the
+         current Flux config for each target environment.
+      2. Preserve `.ignore` files as `.ignore`; update tags only where the ignored
+         manifest still references the ASSIST workload image.
+      3. Do not enable workloads that are currently absent or ignored.
+      4. Treat Airflow as the deployment surface for data-pipeline-dags unless a
+         direct Flux image reference exists.
+      5. In dev, add or update core/base/image-policy/{RELEASE_LINE}.yaml only if
+         the dev Flux config for this release line still references image policies.
+      6. In staging, never add or update core/base/image-policy files.
+      7. If an ignored manifest points at third-party chart-default images rather
+         than ASSIST workload images, leave it unchanged and call out the exception.
+      8. If UPDATE_RUNTIME_IMAGES is yes, update Redis and statsd/runtime sidecars
+         where appropriate and summarize the exact versions changed.
+      9. If DRY_RUN_ONLY is yes, do not modify files, create branches, or open PRs;
+         instead report the exact changes that would be made.
+      10. If DRY_RUN_ONLY is no, create the environment-specific PRs needed for the
+          selected target environments against deploy-automation and include clear
+          titles, descriptions, and links.
+      11. If POST_REVIEW_SUMMARY is yes, prepare or post a concise review summary
+          including PR links, exceptions, and how the image tags were sourced.
+      12. Finish with a concise per-environment summary listing active/ignored/absent
+          workload handling, runtime-image updates, exceptions, and PR links.
+    params:
+      - name: RELEASE_BRANCH
+        type: validated_text
+        label: "Deployed Release Branch"
+        ui_prefix: "release/"
+        placeholder: "DATA_1.6.0.0_DME"
+        validation:
+          pattern: '^[A-Z][A-Z0-9_]*_\d+\.\d+\.\d+\.\d+(?:_[A-Z][A-Z0-9_]*)?$'
+          error_msg: "Must look like DATA_1.7.0.0 or DATA_1.6.0.0_DME"
+
+      - name: RELEASE_LINE
+        type: validated_text
+        label: "Release Line"
+        placeholder: "1.6.0.0"
+        validation:
+          pattern: '^\d+\.\d+\.\d+\.\d+$'
+          error_msg: "Must look like 1.6.0.0"
+
+      - name: TARGET_ENVS
+        type: dropdown
+        label: "Target Environments"
+        choices: ["dev + staging", "dev only", "staging only"]
+        default: "dev + staging"
+
+      - name: UPDATE_RUNTIME_IMAGES
+        type: dropdown
+        label: "Update Redis / statsd"
+        choices: ["yes", "no"]
+        default: "yes"
+
+      - name: POST_REVIEW_SUMMARY
+        type: dropdown
+        label: "Post review summary"
+        choices: ["yes", "no"]
+        default: "yes"
+
+      - name: DRY_RUN_ONLY
+        type: dropdown
+        label: "Dry run only"
+        choices: ["no", "yes"]
+        default: "no"
+
+      - name: JIRA_STORY
+        type: text
+        label: "Jira Story (optional)"
+        optional: true
+        prefix: "Reference Jira story "
+        suffix: " in branch names, PR titles, and summaries."
+  - id: git_branch_summary
+    name: "Branch Summary"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: Summarize commits on a branch compared to main.
+    template: |
+      Summarize the commits on branch {Branch} in {Repo} that are not yet in main.
+      List each commit with its message and a one-line description of what changed.
+      Highlight any breaking changes, dependency updates, or migrations.
+    params:
+      - name: Repo
+        type: dynamic
+        label: "Repository"
+        source_cmd: "ls ~/repos"
+        sort: alpha
+
+      - name: Branch
+        type: dynamic
+        label: "Branch"
+        source_cmd: "git -C ~/repos/{Repo} branch -r --sort=-committerdate 2>/dev/null | sed 's|.*origin/||' | grep -v HEAD | head -40"
+        depends_on: Repo
+
+  - id: git_commit_summary
+    name: "Recent Commits Summary"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: Summarize the last N commits in plain English.
+    template: |
+      Summarize the last {Count} commits in {Repo}.
+      For each commit include: date, author, what changed, and why it matters.
+      At the end give an overall assessment of the direction the codebase is heading.
+    params:
+      - name: Repo
+        type: dynamic
+        label: "Repository"
+        source_cmd: "ls ~/repos"
+        sort: alpha
+
+      - name: Count
+        type: dropdown
+        label: "Number of Commits"
+        choices: ["5", "10", "20", "50"]
+        default: "10"
+
+  - id: create_pr_description
+    name: "Write PR Description"
+    category: "Git Workflow"
+    backend: copilot
+    icon: branch
+    description: Auto-generate a pull request description from a branch diff.
+    template: |
+      Write a clear pull request description for merging branch {Branch} into main
+      in the repository {Repo}.
+      Include: summary of changes, motivation, testing notes, and any risks.
+      Use markdown formatting suitable for GitHub.
+    params:
+      - name: Repo
+        type: dynamic
+        label: "Repository"
+        source_cmd: "ls ~/repos"
+        sort: alpha
+
+      - name: Branch
+        type: dynamic
+        label: "Branch"
+        source_cmd: "git -C ~/repos/{Repo} branch -r --sort=-committerdate 2>/dev/null | sed 's|.*origin/||' | grep -v HEAD | head -40"
+        depends_on: Repo
+
+  # ── SRE / Operations ────────────────────────────────────────────────────────
+
+  - id: host_processes
+    name: "Host Process Report"
+    category: "SRE / Operations"
+    backend: shell_host
+    icon: radar
+    description: List and filter running processes on the host machine.
+    template: "ps aux | grep {Filter} | grep -v grep"
+    params:
+      - name: Filter
+        type: text
+        label: "Filter (process name or user)"
+        default: "python"
+
+  - id: disk_usage
+    name: "Disk Usage"
+    category: "SRE / Operations"
+    backend: shell_host
+    icon: database
+    description: Show disk usage for a directory on the host.
+    template: "du -sh {Path}/* 2>/dev/null | sort -rh | head -20"
+    params:
+      - name: Path
+        type: text
+        label: "Directory Path"
+        default: "~"
+
+  - id: k8s_pod_status
+    name: "K8s Pod Status"
+    category: "SRE / Operations"
+    backend: shell_container
+    icon: pods
+    description: List pods in a namespace with their status.
+    template: "kubectl get pods -n {Namespace} --sort-by=.status.startTime"
+    params:
+      - name: Namespace
+        type: dynamic
+        label: "Namespace"
+        source_cmd: "kubectl get ns -o name 2>/dev/null | sed 's|namespace/||' | sort"
+
+  - id: k8s_pod_logs
+    name: "K8s Pod Logs"
+    category: "SRE / Operations"
+    backend: shell_container
+    icon: pods
+    description: Tail logs for a pod in a namespace.
+    template: "kubectl logs -n {Namespace} {Pod} --tail={Lines} --timestamps"
+    params:
+      - name: Namespace
+        type: dynamic
+        label: "Namespace"
+        source_cmd: "kubectl get ns -o name 2>/dev/null | sed 's|namespace/||' | sort"
+
+      - name: Pod
+        type: dynamic
+        label: "Pod"
+        source_cmd: "kubectl get pods -n {Namespace} -o name 2>/dev/null | sed 's|pod/||' | sort"
+        depends_on: Namespace
+
+      - name: Lines
+        type: dropdown
+        label: "Tail Lines"
+        choices: ["50", "100", "200", "500", "1000"]
+        default: "100"
+
+  # ── Code Review ─────────────────────────────────────────────────────────────
+
+  - id: code_review
+    name: "Code Review"
+    category: "Code Review"
+    backend: copilot
+    icon: search
+    description: Ask for a code review of a specific file or directory.
+    template: |
+      Please review the code in {Path} from the {Repo} repository.
+      Focus on: correctness, security vulnerabilities, performance issues,
+      and adherence to Python best practices.
+      Be specific and actionable in your feedback.
+    params:
+      - name: Repo
+        type: dynamic
+        label: "Repository"
+        source_cmd: "ls ~/repos"
+        sort: alpha
+
+      - name: Path
+        type: text
+        label: "File or Directory Path"
+        placeholder: "e.g. auger/ui/widgets/explorer.py"
+
+  - id: explain_code
+    name: "Explain Code"
+    category: "Code Review"
+    backend: copilot
+    icon: search
+    description: Get a plain-English explanation of a file or function.
+    template: |
+      Explain what the code in {Path} in repository {Repo} does.
+      Describe the purpose, key functions/classes, data flow, and any
+      non-obvious design decisions. Assume the reader is a senior engineer
+      but unfamiliar with this codebase.
+    params:
+      - name: Repo
+        type: dynamic
+        label: "Repository"
+        source_cmd: "ls ~/repos"
+        sort: alpha
+
+      - name: Path
+        type: text
+        label: "File or Directory Path"
+        placeholder: "e.g. auger/ui/widgets/prompts.py"
+
+  # ── Auger Platform ───────────────────────────────────────────────────────────
+
+  - id: auger_status
+    name: "Auger Platform Status"
+    category: "Auger Platform"
+    backend: shell_container
+    icon: rocket
+    description: Quick health check of the Auger platform components.
+    template: |
+      echo "=== Container ===" && hostname && echo "=== Daemon ===" &&
+      curl -s http://localhost:7437/health 2>/dev/null || echo "Daemon not responding" &&
+      echo "=== Symlink ===" && ls -la ~/auger-platform/auger &&
+      echo "=== Git ===" && git -C ~/repos/auger-ai-sre-platform log --oneline -5
+    params: []
+
+  - id: hot_reload_widget
+    name: "Hot-Reload Widget Fix"
+    category: "Auger Platform"
+    backend: copilot
+    icon: refresh
+    description: >
+      Fast path for patching a live widget without restarting the platform.
+      Edit → validate syntax → confirm hot-reload picked it up — then commit.
+      Use this for any single-widget fix; skip the temp-clone cycle until the
+      end.
+    template: |
+      Hot-reload workflow for widget: {Widget}
+
+      STRICT ORDER — do not skip steps:
+      1. Edit ~/repos/auger-ai-sre-platform/auger/ui/widgets/{Widget}.py directly
+         (never work in auger_baked/ — that folder is not watched by hot-reload).
+      2. After every edit, validate syntax immediately:
+            python3 -c "import ast; ast.parse(open('~/repos/auger-ai-sre-platform/auger/ui/widgets/{Widget}.py').read()); print('OK')"
+         If syntax is invalid, fix it before proceeding — do NOT commit broken files.
+      3. Hot-reload is automatic — the platform watches auger/ui/widgets/*.py and
+         reloads on file change. Confirm the widget updated live (user will verify).
+      4. Only AFTER the user confirms the fix is working:
+         - Commit via temp-clone workaround (root-owned .git/refs/heads/ blocks direct commit):
+               TMPDIR=$(mktemp -d)
+               git clone --depth=1 https://${GHE_TOKEN}@github.helix.gsa.gov/assist/auger-ai-sre-platform.git $TMPDIR
+               cp ~/repos/auger-ai-sre-platform/auger/ui/widgets/{Widget}.py $TMPDIR/auger/ui/widgets/
+               cd $TMPDIR && git add auger/ui/widgets/{Widget}.py
+               git commit -m "fix: {Description}"
+               git push https://${GHE_TOKEN}@github.helix.gsa.gov/assist/auger-ai-sre-platform.git HEAD:main
+               rm -rf $TMPDIR
+
+      Now apply the following fix to {Widget}: {Description}
+    params:
+      - name: Widget
+        type: dynamic
+        label: "Widget file (no .py)"
+        source_cmd: "ls ~/repos/auger-ai-sre-platform/auger/ui/widgets/*.py | xargs -n1 basename | sed 's/.py$//'"
+        sort: alpha
+
+      - name: Description
+        type: text
+        label: "What to fix / change"
+        placeholder: "e.g. Crash when namespace list is empty"
+
+  - id: patch_and_commit_widget
+    name: "Patch Widget + Commit"
+    category: "Auger Platform"
+    backend: copilot
+    icon: tools
+    description: >
+      Full patch workflow: edit widget → validate → hot-reload verify → commit to
+      GHE main via temp-clone workaround. Use when the fix touches multiple files
+      or also requires a daemon change.
+    template: |
+      Full patch-and-commit workflow for: {Description}
+
+      Files to change: {Files}
+
+      Follow this order exactly:
+      1. For EACH file listed, make the minimal correct change.
+         - Widget files live at: ~/repos/auger-ai-sre-platform/auger/ui/widgets/
+         - Daemon lives at: ~/repos/auger-ai-sre-platform/scripts/host_tools_daemon.py
+         - Config/data files live at: ~/repos/auger-ai-sre-platform/auger/data/
+      2. Validate syntax of every changed .py file:
+            python3 -c "import ast; ast.parse(open('PATH').read()); print('OK')"
+      3. Widget changes hot-reload automatically. Wait for user to confirm live.
+         Daemon changes require: cp .../host_tools_daemon.py ~/.auger/daemon_patched.py
+         then kill old daemon PID and: nohup python3 ~/.auger/daemon_patched.py >> ~/.auger/daemon.log 2>&1 &
+      4. After user confirms everything works, commit ALL changed files together
+         via temp-clone workaround (root-owned .git/refs/heads/ blocks direct commit).
+         Use GHE_TOKEN from ~/.auger/.env. Push to main.
+      5. Sync working repo: copy committed files back from temp clone, then rm -rf temp clone.
+
+      Context on what to fix: {Description}
+    params:
+      - name: Description
+        type: text
+        label: "What to fix (full description)"
+        placeholder: "e.g. K8s Explorer segfaults due to per-tree ttk.Style names"
+
+      - name: Files
+        type: text
+        label: "Files to change (comma-separated, repo-relative)"
+        placeholder: "e.g. auger/ui/widgets/k8s_explorer.py, scripts/host_tools_daemon.py"
+
+  # ── Persona: Getting Started ─────────────────────────────────────────────────
+
+  - id: persona_fullstack
+    name: "Fullstack Developer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For Java/TypeScript/fullstack devs — discover which Auger widgets help
+      with daily productivity and what new widgets could be built for your stack.
+    template: |
+      I am a {Stack} fullstack developer.
+      1. Which widgets already in the Auger platform can help me be more productive day-to-day? Give me a short description of each and one concrete example of how I would use it.
+      2. Suggest 3-5 new Auger widget ideas tailored specifically to {Stack} developers — think build pipelines, test dashboards, API explorers, dependency audits, or anything that would save me time.
+      3. For the most valuable suggestion, describe what the widget would look like and what data it would need.
+    params:
+      - name: Stack
+        type: dropdown
+        label: "Tech Stack"
+        choices:
+          - "Java/TypeScript"
+          - "Java/Angular"
+          - "Java/React"
+          - "Python/FastAPI"
+          - "Python/Django"
+          - "Go/TypeScript"
+          - "Node/TypeScript"
+        default: "Java/TypeScript"
+
+  - id: persona_sre
+    name: "SRE Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For new SREs — get oriented on what Auger can do for your daily SRE workflow.
+    template: |
+      I am a new SRE joining the team. I work with Kubernetes, Jira, GitHub, Jenkins, and Flux GitOps.
+      1. Walk me through the Auger widgets most relevant to SRE work — what does each one do and when would I use it?
+      2. What can I ask you (Ask Auger) to do that will save me the most time as an SRE?
+      3. Give me 3 example prompts I can try right now to see Auger in action for SRE tasks.
+
+  - id: persona_release_manager
+    name: "Release Manager Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For release managers — understand how Auger supports the full Story-to-Prod pipeline.
+    template: |
+      I manage production releases for the ASSIST platform. I coordinate Jira stories, PRs, Flux GitOps deployments, and Confluence release notes.
+      1. How does the Release Manager widget work and what can I track in it?
+      2. What is the end-to-end flow from a Jira story to a production deployment using Auger tools?
+      3. What Auger features help me ensure nothing gets deployed to prod without the right approvals?
+
+  - id: persona_what_can_auger_do
+    name: "What Can Auger Do For Me?"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      General orientation — describe your role and get a personalized Auger tour.
+    template: |
+      My role: {Role}
+      My main tools and responsibilities: {Tools}
+
+      Given this context:
+      1. Which Auger widgets are most relevant to me and why?
+      2. What are the top 5 things I should try in Auger this week?
+      3. What can I ask you to do that I might not think to ask?
+    params:
+      - name: Role
+        type: text
+        label: "Your Role"
+        placeholder: "e.g. Backend Java developer, SRE, DevOps engineer"
+
+      - name: Tools
+        type: text
+        label: "Tools & Responsibilities"
+        placeholder: "e.g. Kubernetes, Jenkins, Jira, deploy microservices to AWS"
+
+  - id: persona_data_scientist
+    name: "Data Scientist / Analyst Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For data scientists and analysts — discover Auger tools for data pipeline
+      visibility, notebook environments, and database access.
+    template: |
+      I am a data scientist / data analyst working on the ASSIST platform.
+      My primary tools include Python, Jupyter notebooks, SQL, and data pipelines.
+      1. Which Auger widgets are most relevant to my work? Describe each and give a concrete example use case for me.
+      2. How can I use the Database widget to query the ASSIST core DB and explore data?
+      3. How does data-utils fit into my workflow, and how does Auger help me track deployments to it?
+      4. Suggest 3 things I should try in Auger this week to save time on data work.
+
+  - id: persona_backend_developer
+    name: "Backend Developer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For backend Java/Python developers — get oriented on the ASSIST CI/CD
+      pipeline, Jira-to-PR flow, and how Auger fits into daily development.
+    template: |
+      I am a backend developer on the ASSIST platform, primarily working in {Language}.
+      I work with Git, Jira, Jenkins, and deploy services via Flux GitOps.
+      1. Walk me through the typical developer workflow from Jira story to production deployment using Auger widgets.
+      2. Which widgets save me the most time as a backend developer day-to-day?
+      3. How do I use the GitHub widget to track my PRs and the Story → Prod widget to follow a deployment end-to-end?
+      4. What should I know about the branching conventions and PR approval rules enforced in this platform?
+    params:
+      - name: Language
+        type: dropdown
+        label: "Primary Language"
+        choices:
+          - "Java"
+          - "Python"
+          - "Go"
+          - "Node.js"
+          - "TypeScript"
+        default: "Java"
+
+  - id: persona_devops_platform_engineer
+    name: "DevOps / Platform Engineer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For DevOps and platform engineers — explore Flux GitOps, K8s tooling,
+      Artifactory, and infrastructure automation available in Auger.
+    template: |
+      I am a DevOps / platform engineer. I manage Kubernetes clusters, Flux GitOps pipelines,
+      CI/CD with Jenkins, Docker image builds, and Artifactory.
+      1. Which Auger widgets cover infrastructure and platform work? Give me a tour of each.
+      2. How does the Flux Config widget work and how do I promote an image tag to staging vs production?
+      3. Walk me through the prod deployment rules — what approvals are required and why?
+      4. How do the Pods, K8s Explorer, and Panner widgets complement each other for cluster visibility?
+      5. What are the top 3 things I should configure in Auger first to be productive?
+
+  - id: persona_product_owner
+    name: "Product Owner / PM Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For product owners and program managers — understand how Auger gives
+      visibility into the team's delivery pipeline and Jira story progress.
+    template: |
+      I am a product owner / program manager for the ASSIST platform.
+      I track Jira stories, monitor delivery progress, and coordinate releases.
+      1. How can I use Auger to get visibility into what the team is currently deploying without needing terminal access?
+      2. What does the Story → Prod widget show me and how do I read it?
+      3. How does the Release Manager widget help me track production deployments and change records?
+      4. What information can Ask Auger give me about current sprint status, open PRs, and recent deployments?
+
+  - id: persona_qa_engineer
+    name: "QA / Test Engineer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For QA and test engineers — learn how to use Auger to monitor deployments,
+      validate staging environments, and track test-related tasks.
+    template: |
+      I am a QA / test engineer on the ASSIST platform.
+      I validate builds in staging before production promotion, write automated tests, and track defects in Jira.
+      1. Which Auger widgets help me understand what version is deployed where (staging vs production)?
+      2. How do I use the Flux Config widget to see which image tag is running in staging right now?
+      3. How can I validate a staging deployment is healthy using the tools available in Auger?
+      4. What Jira widget features help me link test results back to stories?
+      5. Give me 3 Ask Auger prompts specifically useful for QA validation work.
+
+  - id: persona_security_engineer
+    name: "Security / Compliance Engineer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For security and compliance engineers — understand how Auger handles
+      secrets, credentials, and encrypted config values in the ASSIST platform.
+    template: |
+      I am a security / compliance engineer. I review secrets management,
+      access controls, encrypted config values, and deployment audit trails.
+      1. How does Auger handle credentials and secrets? Where are tokens stored and what protections are in place?
+      2. What is Cryptkeeper and how does it encrypt/decrypt values in Flux HelmRelease configs?
+      3. How do I use the Cryptkeeper and Cryptkeeper Lite widgets to inspect ENC(...) values without exposing secrets?
+      4. What audit trail exists for production deployments — how do I see who deployed what and when?
+      5. What approval gates exist before anything reaches production, and how does Auger enforce them?
+
+  - id: persona_new_team_member
+    name: "New Team Member — Full Orientation"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      Just joined the ASSIST SRE team? Start here for a complete Auger orientation
+      covering every widget, workflow, and tool available.
+    template: |
+      I just joined the ASSIST platform team. My role is: {Role}
+      My background: {Background}
+
+      Please give me a complete orientation:
+      1. What is the ASSIST platform and what does the SRE team do?
+      2. Give me a full tour of every Auger widget — what it does and when I would use it. Group them by category (infrastructure, development, operations, etc).
+      3. What are the most important rules I need to know (deployment approvals, git conventions, secrets management)?
+      4. What should I do in my first week to get productive? Give me a concrete day-by-day plan.
+      5. What are the top 5 things I can ask Ask Auger to do for me right now?
+    params:
+      - name: Role
+        type: text
+        label: "Your Role"
+        placeholder: "e.g. Backend developer, SRE, Data scientist, QA engineer"
+
+      - name: Background
+        type: text
+        label: "Your Background"
+        placeholder: "e.g. 5 years Java dev, new to Kubernetes and GitOps"
+
+  - id: persona_alpha_tester
+    name: "Alpha Tester Orientation"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For alpha testers evaluating the Auger platform — get a structured
+      tour of features to test and known areas to focus on.
+    template: |
+      I am an alpha tester for the Auger SRE Platform.
+      1. What features should I focus on testing first? Give me a prioritized list.
+      2. Walk me through the most critical user flows — what does a successful end-to-end test look like for: Ask Auger, Story → Prod, Flux Config, and the Prompts widget?
+      3. What known limitations or rough edges should I be aware of during alpha?
+      4. How do I report a bug or suggest an improvement? What information should I include?
+      5. What does "working correctly" look like for the session reinit (/reinit) feature and the CAPIError auto-recovery?
+
+  - id: persona_data_scientist
+    name: "Data Scientist / Analyst Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For data scientists and analysts — discover Auger tools for data pipeline
+      visibility, notebook environments, and database access.
+    template: |
+      I am a data scientist / data analyst working on the ASSIST platform.
+      My primary tools include Python, Jupyter notebooks, SQL, and data pipelines.
+      1. Which Auger widgets are most relevant to my work? Describe each and give a concrete example use case for me.
+      2. How can I use the Database widget to query the ASSIST core DB and explore data?
+      3. How does data-utils fit into my workflow, and how does Auger help me track deployments to it?
+      4. Suggest 3 things I should try in Auger this week to save time on data work.
+
+  - id: persona_backend_developer
+    name: "Backend Developer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For backend Java/Python developers — get oriented on the ASSIST CI/CD
+      pipeline, Jira-to-PR flow, and how Auger fits into daily development.
+    template: |
+      I am a backend developer on the ASSIST platform, primarily working in {Language}.
+      I work with Git, Jira, Jenkins, and deploy services via Flux GitOps.
+      1. Walk me through the typical developer workflow from Jira story to production deployment using Auger widgets.
+      2. Which widgets save me the most time as a backend developer day-to-day?
+      3. How do I use the GitHub widget to track my PRs and the Story → Prod widget to follow a deployment end-to-end?
+      4. What should I know about the branching conventions and PR approval rules enforced in this platform?
+    params:
+      - name: Language
+        type: dropdown
+        label: "Primary Language"
+        choices:
+          - "Java"
+          - "Python"
+          - "Go"
+          - "Node.js"
+          - "TypeScript"
+        default: "Java"
+
+  - id: persona_devops_platform_engineer
+    name: "DevOps / Platform Engineer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For DevOps and platform engineers — explore Flux GitOps, K8s tooling,
+      Artifactory, and infrastructure automation available in Auger.
+    template: |
+      I am a DevOps / platform engineer. I manage Kubernetes clusters, Flux GitOps pipelines,
+      CI/CD with Jenkins, Docker image builds, and Artifactory.
+      1. Which Auger widgets cover infrastructure and platform work? Give me a tour of each.
+      2. How does the Flux Config widget work and how do I promote an image tag to staging vs production?
+      3. Walk me through the prod deployment rules — what approvals are required and why?
+      4. How do the Pods, K8s Explorer, and Panner widgets complement each other for cluster visibility?
+      5. What are the top 3 things I should configure in Auger first to be productive?
+
+  - id: persona_product_owner
+    name: "Product Owner / PM Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For product owners and program managers — understand how Auger gives
+      visibility into the team's delivery pipeline and Jira story progress.
+    template: |
+      I am a product owner / program manager for the ASSIST platform.
+      I track Jira stories, monitor delivery progress, and coordinate releases.
+      1. How can I use Auger to get visibility into what the team is currently deploying without needing terminal access?
+      2. What does the Story → Prod widget show me and how do I read it?
+      3. How does the Release Manager widget help me track production deployments and change records?
+      4. What information can Ask Auger give me about current sprint status, open PRs, and recent deployments?
+
+  - id: persona_qa_engineer
+    name: "QA / Test Engineer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For QA and test engineers — learn how to use Auger to monitor deployments,
+      validate staging environments, and track test-related tasks.
+    template: |
+      I am a QA / test engineer on the ASSIST platform.
+      I validate builds in staging before production promotion, write automated tests, and track defects in Jira.
+      1. Which Auger widgets help me understand what version is deployed where (staging vs production)?
+      2. How do I use the Flux Config widget to see which image tag is running in staging right now?
+      3. How can I validate a staging deployment is healthy using the tools available in Auger?
+      4. What Jira widget features help me link test results back to stories?
+      5. Give me 3 Ask Auger prompts specifically useful for QA validation work.
+
+  - id: persona_security_engineer
+    name: "Security / Compliance Engineer Onboarding"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For security and compliance engineers — understand how Auger handles
+      secrets, credentials, and encrypted config values in the ASSIST platform.
+    template: |
+      I am a security / compliance engineer. I review secrets management,
+      access controls, encrypted config values, and deployment audit trails.
+      1. How does Auger handle credentials and secrets? Where are tokens stored and what protections are in place?
+      2. What is Cryptkeeper and how does it encrypt/decrypt values in Flux HelmRelease configs?
+      3. How do I use the Cryptkeeper and Cryptkeeper Lite widgets to inspect ENC(...) values without exposing secrets?
+      4. What audit trail exists for production deployments — how do I see who deployed what and when?
+      5. What approval gates exist before anything reaches production, and how does Auger enforce them?
+
+  - id: persona_new_team_member
+    name: "New Team Member — Full Orientation"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      Just joined the ASSIST SRE team? Start here for a complete Auger orientation
+      covering every widget, workflow, and tool available.
+    template: |
+      I just joined the ASSIST platform team. My role is: {Role}
+      My background: {Background}
+
+      Please give me a complete orientation:
+      1. What is the ASSIST platform and what does the SRE team do?
+      2. Give me a full tour of every Auger widget — what it does and when I would use it. Group them by category (infrastructure, development, operations, etc).
+      3. What are the most important rules I need to know (deployment approvals, git conventions, secrets management)?
+      4. What should I do in my first week to get productive? Give me a concrete day-by-day plan.
+      5. What are the top 5 things I can ask Ask Auger to do for me right now?
+    params:
+      - name: Role
+        type: text
+        label: "Your Role"
+        placeholder: "e.g. Backend developer, SRE, Data scientist, QA engineer"
+
+      - name: Background
+        type: text
+        label: "Your Background"
+        placeholder: "e.g. 5 years Java dev, new to Kubernetes and GitOps"
+
+  - id: persona_alpha_tester
+    name: "Alpha Tester Orientation"
+    category: "Persona: Getting Started"
+    backend: copilot
+    icon: rocket
+    description: >
+      For alpha testers evaluating the Auger platform — get a structured
+      tour of features to test and known areas to focus on.
+    template: |
+      I am an alpha tester for the Auger SRE Platform.
+      1. What features should I focus on testing first? Give me a prioritized list.
+      2. Walk me through the most critical user flows — what does a successful end-to-end test look like for: Ask Auger, Story → Prod, Flux Config, and the Prompts widget?
+      3. What known limitations or rough edges should I be aware of during alpha?
+      4. How do I report a bug or suggest an improvement? What information should I include?
+      5. What does "working correctly" look like for the session reinit (/reinit) feature and the CAPIError auto-recovery?

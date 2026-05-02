@@ -1,0 +1,48 @@
+version: '3.8'
+
+# Test configuration - Clean environment for testing installation
+services:
+  auger-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: auger-platform:test
+    container_name: auger-platform-test
+    hostname: auger-test
+    
+    # Use host network for DNS resolution
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - GITHUB_COPILOT_TOKEN=${GITHUB_COPILOT_TOKEN}
+      # Copilot CLI looks for these specific env vars
+      - COPILOT_GITHUB_TOKEN=${GITHUB_COPILOT_TOKEN}
+      - GH_TOKEN=${GITHUB_COPILOT_TOKEN}
+      - GITHUB_TOKEN=${GITHUB_COPILOT_TOKEN}
+      - TEST_MODE=true
+    
+    volumes:
+      # Only mount source code, no configs
+      - .:/home/testuser/auger-platform
+      
+      # X11 for GUI testing
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      
+      # Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+    
+    network_mode: host
+    
+    stdin_open: true
+    tty: true
+    
+    # Run automated test (copy script to avoid permission issues)
+    command: >
+      bash -c "
+      cp /home/testuser/auger-platform/scripts/docker-test.sh /tmp/docker-test.sh &&
+      chmod +x /tmp/docker-test.sh &&
+      /tmp/docker-test.sh
+      "

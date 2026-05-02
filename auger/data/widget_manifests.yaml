@@ -1,0 +1,309 @@
+# Auger Widget AI Manifests
+# Static tier — describes every widget's purpose, dependencies, and rules.
+# Auger reads this at session start to know what every widget can do.
+# Learned tier lives in ~/.auger/widget_knowledge/{widget_name}.yaml
+
+widgets:
+
+  api_config:
+    title: "API Keys+"
+    purpose: "Manages API keys, tokens, and credentials for all external service integrations. Freshman year — nearly every other widget depends on this."
+    depends_on: []
+    used_by: [jira, gchat, github, artifactory, story_to_prod, flux_config, panner, k8s_explorer]
+    key_data_files:
+      - "~/.auger/.env  (primary credential store — never committed to git)"
+    auger_rules:
+      - "All service credentials live in ~/.auger/.env — never hardcode tokens"
+      - "JIRA_API_TOKEN / JIRA_USERNAME for Jira REST; JSESSIONID for MFA session auth"
+      - "GHE_TOKEN for all GitHub Enterprise API calls (https://github.helix.gsa.gov)"
+      - "Load credentials via python-dotenv before any API call"
+    session_resume_hint: "Check ~/.auger/.env for all service tokens before making API calls"
+
+  gchat:
+    title: "Google Chat"
+    purpose: "Posts messages and @mentions to Google Chat spaces via webhooks. Two scopes: SYSTEM (shared, git-committed) and PERSONAL (user ~/.auger/.env)."
+    depends_on: [api_config]
+    used_by: [story_to_prod, tasks, panner]
+    key_data_files:
+      - "auger/data/gchat_webhooks.yaml  (SYSTEM webhook registry — PR_REVIEWS, AUGER_POC, SRE, etc.)"
+      - "auger/data/gchat_users.yaml  (team member GChat user IDs for @mentions)"
+    auger_rules:
+      - "ALWAYS read webhook URL from gchat_webhooks.yaml — never hardcode"
+      - "ALWAYS use <users/{numeric_id}> syntax for @mentions — plain text names do NOT ping"
+      - "Default channel is AUGER_POC unless user specifies otherwise (AUGER channel is paused)"
+      - "Prod PR notifications go to SRE channel only — not PR_REVIEWS"
+      - "Staging PR notifications go to PR_REVIEWS channel"
+    session_resume_hint: "Read gchat_webhooks.yaml for current channels before posting"
+
+  jira:
+    title: "Jira"
+    purpose: "Fetches, displays, and comments on Jira issues. Authenticated via API token (Basic Auth). Works with any Jira Cloud instance. Configuration stored in API Keys+ widget."
+    depends_on: [api_config]
+    used_by: [story_to_prod]
+    key_data_files:
+      - "~/.auger/.env  (JIRA_BASE_URL, JIRA_USERNAME, JIRA_API_TOKEN)"
+    auger_rules:
+      - "JIRA_BASE_URL, JIRA_USERNAME, JIRA_API_TOKEN must be configured in API Keys+ widget"
+      - "API Token generated at: https://id.atlassian.com/manage-profile/security/api-tokens"
+      - "No scopes required for personal Jira Cloud instances (full user access)"
+      - "Widget auto-initializes when .env is updated via API Keys+ hot-reload"
+    session_resume_hint: "Verify JIRA_BASE_URL and JIRA_API_TOKEN configured before fetching issue data"
+
+  story_to_prod:
+    title: "Story → Prod"
+    purpose: "Full pipeline visibility: Jira Story → Branch → Local Env → Dev Deploy → PR → Jenkins → Image → Staging → PROD. Two collaboration loops: Loop A (Local↔Dev) and Loop B (Dev iterate)."
+    depends_on: [api_config, jira, github, flux_config]
+    used_by: []
+    key_data_files:
+      - "~/.auger/logs/deployments.db  (deployment records)"
+      - "~/.auger/flux_cache/  (local clone of both flux repos)"
+    auger_rules:
+      - "data-utils uses configJH inline config in flux HelmRelease — NOT jupyterhub_config.py in the image"
+      - "Local Env stage is skippable for flux/config-only changes (e.g. ASSIST3-31091)"
+      - "ASSIST3-31091: staging PR #9079 (assist-flux-config), prod PR #1077 (assist-prod-flux-config)"
+      - "Merge order: staging first → validate → then prod (prod needs 2 approvals)"
+      - "Validation: curl -I https://data-utils.staging.assist.mcaas.fcs.gsa.gov/hub/login | grep set-cookie"
+    session_resume_hint: "ASSIST3-31091 PRs open: staging #9079, prod #1077. Awaiting staging merge + validation before prod."
+
+  flux_config:
+    title: "Flux Config"
+    purpose: "Reads and diffs Helm release YAML files in assist-flux-config and assist-prod-flux-config. Shows image tags per environment. Creates Flux PRs to promote image tags."
+    depends_on: [api_config, github]
+    used_by: [story_to_prod]
+    key_data_files:
+      - "~/repos/assist-flux-config/  (staging + dev envs)"
+      - "~/repos/assist-prod-flux-config/  (production — 2 approvals required)"
+      - "~/repos/assist-prod-flux-config/core/production/data-utils/utils/data-utils.yaml  (data-utils prod)"
+    auger_rules:
+      - "ALL flux PRs (both repos, all envs) must target deploy-automation branch — NEVER main"
+      - "assist-prod-flux-config ALWAYS requires 2 approvals — never push directly"
+      - "data-utils configJH is the LIVE jupyterhub config (not the docker image)"
+      - "Both assist-flux-config and assist-prod-flux-config default branch is deploy-automation"
+    session_resume_hint: "Both flux repos default to deploy-automation — always use as PR base"
+
+  github:
+    title: "GitHub"
+    purpose: "Browses GHE repos, branches, PRs, and commit history. Push operations use HTTPS with GHE_TOKEN."
+    depends_on: [api_config]
+    used_by: [story_to_prod, flux_config]
+    key_data_files:
+      - "~/.auger/.env  (GHE_TOKEN, GHE_URL=https://github.helix.gsa.gov)"
+    auger_rules:
+      - "All git operations use HTTPS with GHE_TOKEN — never SSH from container"
+      - "GHE org is 'assist' — repos at https://github.helix.gsa.gov/assist/{repo}.git"
+
+  tasks:
+    title: "Tasks"
+    purpose: "Local SQLite task tracker. Persists across sessions and glitches. Best place to store investigation findings for glitch recovery."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "~/.auger/tasks.db  (table: tasks — id,title,description,status,priority,category)"
+    auger_rules:
+      - "Enrich task descriptions with investigation findings — they survive session glitches"
+      - "Task descriptions are the best persistent knowledge store for complex multi-session work"
+    session_resume_hint: "Read tasks DB for active work context on session start"
+
+  prisma_cloud:
+    title: "Prisma Cloud"
+    purpose: "Fetches live Prisma Cloud Gov and Runtime Security findings, imports Prisma/Jira CSVs, and reconciles CVEs against Jira tracking for remediation workflows."
+    depends_on: [api_config, jira]
+    used_by: [prospector, tasks]
+    key_data_files:
+      - "~/.auger/.env  (PRISMA_CLOUD_URL, PRISMA_CLOUD_ACCESS_KEY, PRISMA_CLOUD_SECRET_KEY)"
+    auger_rules:
+      - "Gov console URL app.gov.prismacloud.io maps to API host api.gov.prismacloud.io"
+      - "Access Key maps to username and Secret Key maps to password for Prisma API auth"
+      - "Task 149/151 focus is Prisma-vs-Jira CVE reconciliation, not just raw vulnerability browsing"
+      - "Prefer live Prisma + live Jira data when available, but support CSV imports as fallback"
+    session_resume_hint: "Check PRISMA_CLOUD_URL and latest reconciliation buckets before resuming CVE tracking work"
+
+  paydirt:
+    title: "Paydirt"
+    purpose: "Task 174 manual-first CVE workflow widget that reads fixable Prisma ZIPs from S3, scopes findings to monitored clusters/namespaces, guides Security through replay/review/story-draft steps, and can later shift into auto monitoring mode."
+    depends_on: [api_config]
+    used_by: [tasks]
+    key_data_files:
+      - "~/.auger/.env  (DEV_S3_AWS_ACCESS_KEY_ID, DEV_S3_AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION)"
+      - "~/.auger/config.yaml  (Paydirt workflow mode, monitored targets, S3 bucket/prefix overrides)"
+      - "s3://assist-data-development-s3/prisma/raw/  (daily DEV/STG/PROD Prisma ZIP history)"
+    auger_rules:
+      - "Use the FIXABLE CSV member from each daily Prisma ZIP as the working source"
+      - "Manual mode is the primary first pass: process latest ZIPs, review tracked CVEs, then preview the Jira stories/subtasks that would be created"
+      - "Persist monitored cluster/namespace scope rules plus S3 bucket/prefix settings in ~/.auger/config.yaml"
+      - "Keep Jira creation preview-only until the manual workflow is proven; do not create stories, subtasks, or board records from this widget yet"
+      - "Prefer S3 replay of daily history over live Prisma API calls"
+      - "Design the parsing/comparison logic so it can later be exported into a standalone Python runtime for Security"
+    session_resume_hint: "Process the latest scoped ZIPs, review tracked CVEs and Jira draft previews, then use replay tabs for env/date drill-down"
+
+  host_tools:
+    title: "Host Tools"
+    purpose: "Launches host-side applications (VS Code, IntelliJ, Chrome, Terminal) from within the container via HTTP daemon on localhost:7437."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "~/.auger/host_tools.json  (registered tool configs)"
+      - "scripts/host_tools_daemon.py  (HTTP daemon on port 7437)"
+    auger_rules:
+      - "Container uses --network host so localhost:7437 is shared with host"
+      - "open_path(tool_key, path) auto-strips /host prefix"
+      - "Registered tools: vscode, intellij-community, intellij-ultimate, chrome, terminal"
+
+  pods:
+    title: "Pods"
+    purpose: "Shows Kubernetes pod status across namespaces via Rancher API. Real-time status for running deployments."
+    depends_on: [api_config]
+    used_by: [story_to_prod]
+    key_data_files:
+      - "~/.auger/.env  (RANCHER_URL, RANCHER_BEARER_TOKEN)"
+    auger_rules:
+      - "Uses Rancher API — not direct kubectl from container"
+
+  panner:
+    title: "Panner"
+    purpose: "Auto-sources kubectl context and DataDog dashboards. Phase 1: read-only namespace/pod visibility."
+    depends_on: [api_config]
+    used_by: []
+    key_data_files: []
+    auger_rules:
+      - "Never use kubectl for FCS/prod — always Flux config PR for deployments"
+
+  k8s_explorer:
+    title: "K8s Explorer"
+    purpose: "Browses Kubernetes resources (pods, services, configmaps, secrets) across clusters."
+    depends_on: [api_config]
+    used_by: []
+    key_data_files:
+      - "~/.auger/.env  (RANCHER_URL, RANCHER_BEARER_TOKEN)"
+    auger_rules:
+      - "Read-only exploration only — never kubectl apply/delete from container"
+
+  shell_terminal:
+    title: "Bash $"
+    purpose: "Embedded bash terminal inside the Auger platform container. Full shell access."
+    depends_on: []
+    used_by: []
+    auger_rules:
+      - "Running inside container — /host prefix accesses host filesystem"
+      - "Git push uses HTTPS not SSH from container"
+
+  cryptkeeper_lite:
+    title: "Cryptkeeper Lite"
+    purpose: "Decrypts ENC(...) values in flux config YAML files. Used to read encrypted secrets without exposing them."
+    depends_on: [api_config]
+    used_by: [flux_config, story_to_prod]
+    auger_rules:
+      - "Never log or display decrypted secret values"
+
+  production_release:
+    title: "Release Manager"
+    purpose: "Tracks production deployment records: change numbers, services, PRs, image tags. SQLite-backed deployment log."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "~/.auger/logs/deployments.db"
+    auger_rules:
+      - "Deployment record #1 pre-loaded for ASSIST3-31091 (Data Utils 1.5.4.0 DME)"
+      - "Staging deployments require the same release discipline as prod: Jira story + Confluence deployment instructions before deploy"
+
+  artifactory:
+    title: "Artifactory"
+    purpose: "Browse, pull, push, and run Docker images from JFrog Artifactory (artifactory.helix.gsa.gov). Primary image store for all ASSIST builds."
+    depends_on: [api_config]
+    used_by: [story_to_prod, flux_config]
+    key_data_files:
+      - "~/.auger/.env  (ARTIFACTORY_URL, ARTIFACTORY_API_KEY, ARTIFACTORY_USERNAME)"
+    auger_rules:
+      - "Registry is artifactory.helix.gsa.gov — not Docker Hub or GCR"
+      - "Image tags promoted to prod via Flux config PR, never direct push"
+    session_resume_hint: "Use ARTIFACTORY_URL + ARTIFACTORY_API_KEY from ~/.auger/.env for API calls"
+
+  cryptkeeper:
+    title: "Cryptkeeper"
+    purpose: "Encrypts/decrypts values using Jasypt via a Docker container. Full-featured version of Cryptkeeper Lite — runs containerized Jasypt."
+    depends_on: [api_config]
+    used_by: [flux_config]
+    auger_rules:
+      - "Requires Docker socket mounted — docker.sock must be available"
+      - "Use cryptkeeper_lite for fast decryption of existing ENC(...) values"
+
+  database:
+    title: "Database"
+    purpose: "SQL workbench for Auger. Connect to PostgreSQL/SQLite, execute queries, browse schema. Primary DB is ASSIST core dev DB on RDS."
+    depends_on: [api_config]
+    used_by: []
+    key_data_files:
+      - "~/.auger/.env  (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)"
+    auger_rules:
+      - "ASSIST core DB: postgresql assist-core-development-db-postgres.cluster-cxwm0hb0ofre.us-east-1.rds.amazonaws.com db=dev09"
+      - "Never run destructive DDL against prod — read-only queries preferred"
+
+  explorer:
+    title: "Explorer"
+    purpose: "File system browser for all mounted volumes and local container filesystem. Browse, view, and inspect files across container mounts."
+    depends_on: []
+    used_by: []
+    auger_rules:
+      - "Container root is /. Host filesystem is accessible at /host if mounted"
+      - "Auger platform source lives at ~/repos/auger-ai-sre-platform"
+
+  help_viewer:
+    title: "Help"
+    purpose: "Renders markdown documentation in a tabbed interface. Opens docs from the docs/ directory or any path on disk."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "~/repos/auger-ai-sre-platform/docs/  (platform documentation)"
+    auger_rules:
+      - "Use open_doc(path) to open a doc programmatically from other widgets"
+
+  image_lab:
+    title: "Image Lab"
+    purpose: "PIL image preview and AI-driven image iteration. Opens images, applies AI prompts to transform them, previews results inline."
+    depends_on: []
+    used_by: []
+    auger_rules:
+      - "Requires Pillow (PIL) installed in container"
+
+  prompts:
+    title: "Prompts"
+    purpose: "Parameterized prompt and command library. Load, edit, and run saved prompts. User overrides in ~/.auger/prompts.yaml take priority over origin prompts."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "~/.auger/prompts.yaml  (user prompt overrides and additions)"
+      - "auger/data/origin/prompts.yaml  (platform default prompts)"
+    auger_rules:
+      - "User prompts.yaml takes precedence over origin prompts.yaml"
+      - "Prompts support {variable} placeholder substitution"
+
+  prospector:
+    title: "Prospector"
+    purpose: "CVE analysis tool (Au Prospector). Scans container images and packages for known vulnerabilities. Integrated ASSIST POAM/Invicti finding tracker."
+    depends_on: [api_config]
+    used_by: []
+    auger_rules:
+      - "CVE findings feed into POAM — coordinate with security team before closing"
+
+  rcs_panels:
+    title: "Rules/Conventions/Standards"
+    purpose: "Editor panels for Auger rules, conventions, and standards. Two-pane editor: list with badges on left, detail editor on right. Changes saved to ~/.auger/*.yaml."
+    depends_on: []
+    used_by: []
+    key_data_files:
+      - "~/.auger/rules.yaml  (user rules — merged with origin/rules.yaml at runtime)"
+      - "~/.auger/conventions.yaml  (user conventions)"
+      - "auger/data/origin/rules.yaml  (platform default rules)"
+    auger_rules:
+      - "User ~/.auger/rules.yaml is merged with origin rules — user rules take precedence"
+      - "Add new rules here when team discovers new operational constraints"
+
+  servicenow:
+    title: "ServiceNow"
+    purpose: "Manage ServiceNow incidents, changes, and tasks (ITSM). Used for change management records tied to production deployments."
+    depends_on: [api_config]
+    used_by: [story_to_prod]
+    key_data_files:
+      - "~/.auger/.env  (SERVICENOW_INSTANCE, SERVICENOW_USER, SERVICENOW_PASSWORD)"
+    auger_rules:
+      - "Production changes require an approved ServiceNow change record"

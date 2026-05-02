@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "platformgen-py"
+version = "0.1.0"
+description = "AI-powered SRE platform with dynamic widgets and chat assistant"
+readme = "README.md"
+authors = [
+    {name = "GSA ASSIST Team", email = "assist@gsa.gov"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Monitoring",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["sre", "devops", "monitoring", "widgets", "ai-assistant", "datadog", "github", "servicenow"]
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.1",
+    "boto3>=1.34.0",
+    "rich>=13.7.0",
+    "click>=8.1.7",
+    "Pillow>=10.0.0",
+    "pycryptodome>=3.20.0",
+    "selenium>=4.0.0",
+    "webdriver-manager>=4.0.0",
+    "beautifulsoup4>=4.12.0",
+    "tkterm>=0.0.0b2",
+    "ujenkins>=0.11.1",
+    "PyGithub>=1.59.0",
+    "html2text>=2020.1.16",
+    "pygments>=2.17.0",
+    "psutil>=5.9.0",
+    "pystray>=0.19.0",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+]
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.helix.gsa.gov/assist/auger-ai-sre-platform"
+Documentation = "https://github.helix.gsa.gov/assist/auger-ai-sre-platform/blob/main/docs"
+Repository = "https://github.helix.gsa.gov/assist/auger-ai-sre-platform"
+Issues = "https://github.helix.gsa.gov/assist/auger-ai-sre-platform/issues"
+
+[project.scripts]
+auger = "auger.cli:cli_main"
+platformgen = "auger.cli:cli_main"
+
+[tool.setuptools]
+packages = ["auger", "auger.ui", "auger.ui.widgets", "auger.tools", "auger.integrations", "auger.data"]
+
+[tool.setuptools.package-data]
+auger = [
+    "config/*.yaml",
+    "data/origin/*.md",
+    "ui/assets/*.png",
+]

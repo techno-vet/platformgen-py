@@ -1,0 +1,70 @@
+# Auger Platform — Team Rules
+# enforcement: warn (Auger warns user), block (Auger refuses), info (Auger mentions)
+rules:
+  - id: flux-config-always-two-approvals
+    name: assist-prod-flux-config always requires 2 approvals
+    scope: repo:assist-prod-flux-config
+    enforcement: warn
+    rule: >
+      CRITICAL: The assist-prod-flux-config repository always requires 2 approvals
+      before merging any PR, even for SRE team members who have direct push access.
+      Always create a PR — never push directly to main in this repo.
+      Warn the user immediately if they attempt to push directly to this repo.
+
+  - id: default-pr-approvals
+    name: Default PRs require 2 approvals
+    scope: global
+    enforcement: info
+    rule: >
+      All GitHub PRs should have at least 2 approvals before merging.
+      Remind users to get a second review if they only have 1 approval.
+
+  - id: sre-push-without-approval
+    name: SRE team may push without approval (non-flux repos)
+    scope: team:SRE
+    enforcement: info
+    rule: >
+      Members of the SRE team are permitted to push directly to feature branches
+      without requiring PR approval, EXCEPT for assist-prod-flux-config which
+      always requires 2 approvals regardless of team membership.
+
+  - id: git-push-use-ghe-https
+    name: Git push uses GHE HTTPS with GHE_TOKEN (not SSH, not github.com)
+    scope: platform
+    enforcement: warn
+    rule: >
+      All Auger platform git operations push to the enterprise GitHub instance at
+      github.helix.gsa.gov, org: assist. Repos live at
+      https://github.helix.gsa.gov/assist/<repo>.git.
+      Always push via HTTPS using the GHE_TOKEN from ~/.auger/.env — never SSH
+      (SSH is read-only / blocked inside the container).
+      The github.com token (GH_TOKEN) is only for Copilot API access — it cannot
+      push to enterprise repos.
+      Push pattern:
+        git remote set-url origin https://bobbygblair:{GHE_TOKEN}@github.helix.gsa.gov/assist/<repo>.git
+        git push origin <branch>
+        git remote set-url origin https://github.helix.gsa.gov/assist/<repo>.git
+
+  - id: staging-deploy-requires-jira-and-confluence
+    name: Staging deploys require Jira story and Confluence deployment instructions
+    scope: global
+    enforcement: error
+    rule: >
+      DO NOT deploy anything to any staging environment without BOTH a Jira story
+      covering the work and deployment instructions documented in Confluence.
+      Treat ALL staging environments with the same release discipline as production.
+      If either artifact is missing, stop and get the Jira story / Confluence
+      deployment instructions in place before proceeding.
+
+  - id: data-team-repo-scope
+    name: Data-team repo scope excludes automated-test repo and includes assist-jupyterhub
+    enforcement: info
+    scope: global
+    rule: >
+      For Auger reporting, audits, and recommendations, treat the data-team/data-tools
+      repo scope as the 12 assist org repos that use DATA_1.x.x.x release branches,
+      EXCLUDING assist-data-api-service-automated-test, PLUS assist-jupyterhub as
+      an explicit anomaly/include. Do NOT exclude assist-jupyterhub just because
+      its repo name does not start with assist-data-. Unless the user says otherwise,
+      use this 13-repo scope for requests about data repos, data team repos, and
+      data tools.

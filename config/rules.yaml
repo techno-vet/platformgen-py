@@ -1,0 +1,435 @@
+rules:
+- enforcement: warn
+  id: gchat-mention-use-user-id
+  name: GChat @mentions must use real user ID syntax
+  rule: 'When @mentioning anyone in Google Chat, NEVER use plain text names like "@Samir". Always look up the user''s numeric
+    ID from ~/repos/auger-ai-sre-platform/auger/data/gchat_users.yaml and use the GChat mention syntax: <users/{user_id}>
+    Example: <users/110016791780898639579> (Samir Bham) Plain text names do NOT trigger a notification ping in Google Chat.
+
+    '
+  scope: global
+- enforcement: warn
+  id: data-image-tags-come-from-artifactory
+  name: Use Artifactory as image tag source of truth
+  rule: 'When you need the exact immutable image tag produced by Jenkins for ASSIST images (for example `release-main-BUILD...`),
+    query Artifactory first, not ECR. In this environment the same image tag is pushed to Artifactory and ECR during Jenkins
+    builds, but Artifactory is the reliable/queryable source available to Auger and matches what Prospector surfaces. Prefer
+    `https://artifactory.helix.gsa.gov/artifactory` with the configured ARTIFACTORY_* credentials and query `gs-assist-docker-repo`
+    for image manifests/tags.
+
+    '
+  scope: global
+- enforcement: warn
+  id: gchat-use-webhooks-yaml
+  name: GChat channel targets must come from gchat_webhooks.yaml
+  rule: 'When posting to any Google Chat channel, always read the webhook URL from ~/repos/auger-ai-sre-platform/auger/data/gchat_webhooks.yaml
+    (also mirrored at ~/repos/auger-ai-sre-platform/config/gchat_webhooks.yaml). Never hardcode webhook URLs in code or commands.
+    Current default channel: AUGER_POC — all updates route here until further notice. Available channels: PR_REVIEWS, AUGER,
+    AUGER_POC, SRE.
+
+    '
+  scope: global
+- enforcement: warn
+  id: new-widget-must-have-ai-manifest
+  name: Every new widget must include WIDGET_AI_MANIFEST in widget_manifests.yaml
+  rule: "When creating any new widget, ALWAYS add a corresponding entry to ~/repos/auger-ai-sre-platform/auger/data/widget_manifests.yaml\
+    \ with:\n  title, purpose, depends_on, used_by, key_data_files, auger_rules, session_resume_hint.\nThis is the Widget\
+    \ AI Manifest — it persists across session glitches and teaches Auger the widget's purpose, dependencies, and operational\
+    \ rules on every session start. Failure to add a manifest means Auger will have to rediscover the widget's behavior from\
+    \ scratch after every session glitch.\n"
+  scope: global
+- enforcement: warn
+  id: update-widget-manifest-on-widget-change
+  name: Update widget_manifests.yaml when widget behavior or rules change
+  rule: 'When modifying a widget in a way that changes its capabilities, data files, operational rules, or dependencies —
+    update the corresponding entry in ~/repos/auger-ai-sre-platform/auger/data/widget_manifests.yaml. Also update the create-widget
+    convention in __init__.py if the change applies to all future widgets (e.g. adding a new required constant or file).
+
+    '
+  scope: global
+- enforcement: error
+  id: flux-prs-target-deploy-automation
+  name: Widget scaffold must include all current required features
+  rule: "When the user asks to create a new widget, the generated widget .py file MUST include ALL of the following (update\
+    \ this list as new required features are added):\n  1. WIDGET_TITLE = \"Human Readable Name\"  (tab label)\n  2. WIDGET_ICON_FUNC\
+    \ = staticmethod(make_icon)  (tab icon)\n  3. An entry in auger/data/widget_manifests.yaml with: title, purpose, depends_on,\n\
+    \     used_by, key_data_files, auger_rules, session_resume_hint\nWhen a new cross-cutting feature is added to the platform\
+    \ (e.g. WIDGET_AI_MANIFEST, a new lifecycle hook, a new required method), THIS rule must be updated to include that feature\
+    \ so all future widgets automatically get it. Rule changelog:\n  2024-03: Added WIDGET_ICON_FUNC requirement\n  2025-03:\
+    \ Added WIDGET_AI_MANIFEST requirement (widget_manifests.yaml entry)\n"
+  scope: widget_creation
+- enforcement: error
+  id: create-widget-scaffold-includes-all-required-features
+  name: Widget scaffold must include all current required features
+  rule: "When the user asks to create a new widget, the generated widget .py file MUST include ALL of the following (update\
+    \ this list as new required features are added):\n  1. WIDGET_TITLE = \"Human Readable Name\"  (tab label)\n  2. WIDGET_ICON_FUNC\
+    \ = staticmethod(make_icon)  (tab icon)\n  3. An entry in auger/data/widget_manifests.yaml with: title, purpose, depends_on,\n\
+    \     used_by, key_data_files, auger_rules, session_resume_hint\n  4. WIDGET_DEMO_DATA = {{...}}  — curated sample data\
+    \ dict, returned by _load_data() when os.environ.get(\"AUGER_DEMO\") is set. Enables: AUGER_DEMO=1 auger start (full real\
+    \ UI, no credentials)\nWhen a new cross-cutting feature is added to the platform, THIS rule must be updated. Rule changelog:\n\
+    \  2024-03: Added WIDGET_ICON_FUNC requirement\n  2025-03: Added WIDGET_AI_MANIFEST requirement (widget_manifests.yaml\
+    \ entry)\n  2025-06: Added WIDGET_DEMO_DATA requirement (offline/demo mode support)\n"
+  scope: widget_creation
+- id: display-times-in-et
+  name: All times must display in Eastern Time (ET/EST/EDT)
+  enforcement: warn
+  scope: global
+  rule: "NEVER display times in UTC to the user. Always convert to Eastern Time (America/New_York). DST transitions:\n  -\
+    \ EST (UTC-5): November first Sunday 2am → March second Sunday 2am\n  - EDT (UTC-4): March second Sunday 2am → November\
+    \ first Sunday 2am\n2026 transitions: Spring forward 2026-03-08 02:00 EST → EDT. Fall back 2026-11-01 02:00 EDT → EST.\n\
+    When pytz is not available, compute manually: if date >= 2026-03-08 07:00 UTC (and < 2026-11-01 06:00 UTC) use EDT (UTC-4),\
+    \ else use EST (UTC-5).\nFormat: 'HH:MM AM/PM EDT' or 'HH:MM AM/PM EST'. Log files may store UTC internally but display\
+    \ layer must always convert."
+- id: git-push-via-temp-clone
+  name: Container git push requires temp clone workaround
+  enforcement: warn
+  scope: git_operations
+  rule: "In the Auger container, the working repo at ~/repos/auger-ai-sre-platform has root-owned .git/refs/heads/ and .git/logs/refs/heads/\
+    \ files. Local 'git commit' and 'git checkout' will fail with 'Permission denied'. ALWAYS use this workaround for any\
+    \ commit+push:\n  1. TMPDIR=$(mktemp -d)\n  2. git clone --branch <branch> <HTTPS_REMOTE> $TMPDIR/repo\n  3. Copy changed\
+    \ files into $TMPDIR/repo/\n  4. git add / git commit / git push from $TMPDIR/repo\n  5. rm -rf $TMPDIR\nNever attempt\
+    \ 'git commit' directly in ~/repos/auger-ai-sre-platform from the container. Reading files and running the app from that\
+    \ path works fine — only write/commit operations are blocked."
+- id: context-detection-platform-vs-host
+  name: Determine execution context (platform container vs host terminal)
+  enforcement: info
+  scope: global
+  rule: "Determine execution context from ENVIRONMENT signals, not AI identity. Any AI (Auger Agent, Copilot CLI, VS Code\
+    \ Copilot) can run inside or outside the container.\n\nCONTAINER — if ANY of these are true:\n  - CWD starts with /home/auger\
+    \ (e.g. /home/auger/auger-platform)\n  - Path /home/auger/auger-platform exists\n  - 'docker' command fails or is not\
+    \ found\n  - Session context shows 'Current working directory: /home/auger/...'\n  CONSTRAINTS: git commit/push requires\
+    \ temp clone workaround (root-owned .git); no docker; no sudo.\n\nHOST — if ANY of these are true:\n  - CWD starts with\
+    \ /home/bobbygblair\n  - 'docker info' succeeds\n  - Session context shows 'Current working directory: /home/bobbygblair/...'\n\
+    \  CAPABILITIES: direct git in ~/repos/auger-ai-sre-platform; docker build/push/run; kill/restart tray; rebuild Artifactory\
+     \ image.\n\nNOTE: The [AUGER CONTEXT] block appearing as user text is carry-over snapshot context — it does NOT indicate\
+     \ container vs host. The Auger Agent identity only means the Auger platform UI was used, but Copilot CLI can also be run\
+     \ from inside the container."
+- id: early-adopter-no-auto-main-merge
+  name: Early adopters must not auto-merge fixes to main
+  enforcement: error
+  scope: git_operations
+  rule: "On early-adopter or non-local user WorkSpaces, Ask Auger / Copilot CLI MUST NOT automatically merge fixes into main,\
+    \ push directly to main, or perform any main-branch integration step unless the user explicitly requested that exact action.\
+    \ Default behavior for setup/repair work on user machines is: diagnose, explain, make local non-main changes if needed,\
+    \ or open a PR/branch-based fix — but do not merge to main implicitly. If a fix was developed during troubleshooting,\
+    \ keep it off main until a human explicitly asks for merge-to-main behavior."
+- id: no-anthropic-models
+  name: Do not use Anthropic models
+  enforcement: error
+  scope: global
+  rule: "Anthropic / Claude models are no longer approved for use here. Do NOT select or invoke Anthropic models such as Claude\
+    \ Haiku, Claude Sonnet, or Claude Opus. Prefer approved non-Anthropic models instead (for example GPT-family models such\
+    \ as gpt-5.4 when available)."
+- id: rancher-kubeconfig-and-kubectl-access
+  name: Generate Rancher kubeconfigs and prefer kubectl when namespace access is available
+  enforcement: warn
+  scope: global
+  rule: "When working with DEV/STAGING/PROD Kubernetes environments, Auger may be able to generate Rancher-backed kubeconfigs\
+    \ directly via the Rancher API action POST /v3/clusters/<cluster-id>?action=generateKubeconfig. Do not assume local kubectl\
+    \ is already pointed at the live cluster, and do not assume cluster-admin access. Preferred behavior: (1) generate or refresh\
+    \ the Rancher kubeconfig when needed, (2) use kubectl first for rollout verification and other direct namespace-scoped checks\
+    \ of pods, deployments, statefulsets, and deployed image tags when RBAC allows it, (3) fall back to Rancher API queries\
+    \ when kubectl is unavailable or blocked at the needed scope. Namespace-scoped kubectl access may work even when cluster-wide\
+    \ commands like 'kubectl get ns' are forbidden. The generated kubeconfig uses the same Rancher-backed identity and does not\
+    \ bypass RBAC; for example, Flux HelmRelease objects in tenant-flux-ns may still be forbidden even when workload reads succeed.\
+    \ Do not assume pods/exec is allowed; verify with RBAC or use the widget's Rancher-backed exec path where applicable."
+- id: no-concurrent-ask-auger
+  name: Do not unlock copilot session while another Ask Auger prompt is processing
+  enforcement: error
+  scope: ask_auger
+  rule: "NEVER start a new Ask Auger / copilot CLI invocation if one is already in progress. Two concurrent auger processes\
+    \ competing for the same copilot session will corrupt events.jsonl (the session state file).\n\n Enforcement points:\n\
+    \ 1. ask_auger.py _on_ask(): checks self._process.poll() is None — returns early with a warning message if still running.\n\
+    \ 2. cli.py: uses fcntl.LOCK_EX | LOCK_NB — fails immediately with a clear message if the lock is held, instead of waiting\
+    \ and then double-unlocking.\n 3. Quick Ask panel obeys the same rule — never fire a second prompt while the panel subprocess\
+    \ is still streaming output.\n If the lock appears stale (previous process crashed), remove ~/.auger/.copilot.lock manually\
+    \ to reset."
+- id: container-proxy-blocks-localhost
+  name: Corporate proxy intercepts localhost always use --noproxy
+  enforcement: error
+  scope: global
+  rule: "The container environment has http_proxy=http://127.0.0.1:9000 set. Any curl or HTTP call to localhost/127.0.0.1\
+    \ (e.g. the host daemon at port 7437) is silently routed through the corporate proxy and returns a 404 or connection refused.\
+    \ ALWAYS use --noproxy localhost,127.0.0.1 with curl:\n  curl --noproxy localhost http://localhost:7437/health\nSymptom:\
+    \ daemon appears unresponsive but is actually running fine.\n"
+- id: daemon-pid-not-visible-via-pgrep
+  name: Host daemon PID requires /proc scan pgrep does not work from container
+  enforcement: info
+  scope: host_tools
+  rule: 'The host daemon (host_tools_daemon.py) runs on the host in a different PID namespace. ''pgrep -f host_tools_daemon''
+    returns nothing from inside the container. To find the daemon PID from inside the container, scan /proc:   grep -r host_tools_daemon
+    /proc/*/cmdline 2>/dev/null | head -1 | cut -d/ -f3 Or read ~/.auger/daemon.pid which the daemon writes on startup. To
+    restart: nohup python3 ~/.auger/daemon_patched.py >> ~/.auger/daemon.log 2>&1 &'
+- id: sigsegv-exit-139-kills-container
+  name: Widget segfault exit 139 kills the entire container restart required
+  enforcement: error
+  scope: global
+  rule: 'A C-level segfault (SIGSEGV, exit code 139) inside the Auger platform process cannot be caught by Python try/except.
+    It kills the container entirely, not just the UI. After a crash: ''docker ps -a'' shows container as Exited (139). The
+    tray restart button silently fails because docker exec cannot reach a stopped container. Recovery: (1) From host terminal:
+    docker start auger-platform (2) Wait ~5s for entrypoint to settle (3) docker exec -d auger-platform auger start As of
+    commit 149a238, the tray restart button detects this and runs docker start automatically.'
+- id: ttk-style-unique-names-crash
+  name: ttk.Style with per-widget unique names causes SIGSEGV crash
+  enforcement: error
+  scope: widget_development
+  rule: 'NEVER create unique ttk.Style names per widget instance using id(widget) or any runtime-unique value. Multiple rapid
+    ttk.Style configure/map calls with unique names triggers a Tk C-level crash (exit 139) that kills the entire container.
+    BAD: style_name = f''MyWidget{id(tree)}.Treeview'' then s.configure(style_name, ...) CORRECT: one module-level shared
+    style name, configured once via a boolean guard:   _STYLE_READY = False   def _ensure_styles():       global _STYLE_READY       if
+    _STYLE_READY: return       s = ttk.Style()       s.configure(''MyWidget.Treeview'', ...)       _STYLE_READY = True Also:
+    NEVER call style.theme_use() from a widget — it resets the global theme and crashes.'
+- id: hot-reload-uses-working-repo-not-baked
+  name: Hot-reload watches working repo only auger_baked is not live
+  enforcement: warn
+  scope: widget_development
+  rule: 'The Auger platform hot-reload file watcher monitors:   ~/repos/auger-ai-sre-platform/auger/ui/widgets/*.py Editing
+    any file in auger_baked/ has NO effect on the running platform. auger_baked/ is a snapshot copy used for the baked Docker
+    image. Correct hot-reload workflow: (1) Edit ~/repos/auger-ai-sre-platform/auger/ui/widgets/<widget>.py directly (2) Validate
+    syntax: python3 -c "import ast; ast.parse(open(''<path>'').read()); print(''OK'')" (3) Hot-reload fires automatically
+    on file write — confirm live in app with user (4) Only after user confirms working: commit via temp-clone workaround'
+- id: daemon-running-copy-is-daemon-patched
+  name: Daemon must launch from repo path not daemon_patched.py
+  enforcement: warn
+  scope: host_tools
+  rule: 'The host daemon MUST always be launched from the repo path:   python3 ~/repos/auger-ai-sre-platform/scripts/host_tools_daemon.py
+    NOT from ~/.auger/daemon_patched.py. REPO_DIR = Path(__file__).parent.parent — if run from daemon_patched.py REPO_DIR
+    becomes ~/.auger (wrong), docker-run.sh is not found, and stream_restart_platform cannot find docker. The tray''s ''Restart
+    Daemon Only'' menu item does this correctly. To manually restart from host terminal:   nohup python3 ~/repos/auger-ai-sre-platform/scripts/host_tools_daemon.py   >>
+    ~/.auger/daemon.log 2>&1 & Use setsid or start_new_session=True so the daemon survives terminal close. PID is written
+    to ~/.auger/daemon.pid on startup.'
+- id: install-wizard-is-host-side-only
+  name: Install wizard must launch via host daemon not from inside container
+  enforcement: warn
+  scope: host_tools
+  rule: 'The install wizard (auger_install_wizard.py) is a Tkinter app that must render on the host X11 display. Launching
+    it from inside the container produces no visible window because the wizard process has no access to the host desktop session.
+    ALWAYS launch via the host daemon endpoint:   curl --noproxy localhost -X POST http://localhost:7437/launch_wizard The
+    daemon spawns the wizard on the host desktop. (implemented in commit 304bcb3)'
+- id: proactively-codify-rules
+  name: Proactively codify reusable knowledge as rules
+  enforcement: info
+  scope: ai_behavior
+  rule: 'When you discover a non-obvious operational fact, workaround, crash pattern, or
+    convention during a task — especially one that caused confusion or required investigation —
+    proactively offer to add it as a rule to ~/.auger/rules.yaml (and config/rules.yaml if
+    repo-worthy so all alpha testers inherit it). Do not wait for the user to ask. Good candidates:
+    crash patterns, auth quirks, proxy gotchas, script path requirements, API behavior, anything
+    that would have saved time if known at session start. This is how the rule set grows organically
+    and makes every session — including post-glitch recovery — start with more context than the last.'
+
+- id: install-launch-chain
+  severity: INFO
+  title: 'Alpha tester install chain: install_wizard → auger-launch.sh → docker-run.sh'
+  body: >
+    The Auger install chain for alpha testers is:
+      1. ./scripts/install_wizard   (Tkinter wizard — collects tokens/credentials, then calls auger-launch.sh)
+      2. scripts/auger-launch.sh    (Artifactory login → pull image → start container → daemon → tray → GNOME launcher)
+      3. scripts/docker-run.sh      is a PARALLEL path, not called by auger-launch.sh.
+                                    It is used for: local dev (smart Dockerfile rebuild detection),
+                                    and is the Exec= target in the GNOME .desktop launcher.
+    auger-launch.sh now also installs the GNOME .desktop launcher and autostart entry (step 14)
+    so alpha testers who only run install_wizard get the app grid icon and reboot persistence.
+    NEVER redirect alpha testers to docker-run.sh for first install — always install_wizard.
+
+- id: restart-platform-kills-ask-auger-session
+  severity: ERROR
+  title: Use Ask Auger on host terminal for anything that restarts the platform
+  body: >
+    Calling POST /restart_platform (or anything that kills the auger process) from inside an Ask Auger
+    response terminates the very session you are running in. The container stays up but the UI goes
+    dark with zombie processes.
+
+    The correct pattern for ANY operation that requires restarting the platform, clearing stale
+    bytecode, or performing host-level actions is:
+
+      1. Tell the user: "Please run this from a host terminal (not Ask Auger inside the platform)"
+      2. Or better: "Open a host terminal and ask Auger there — run: cd ~/repos/auger-ai-sre-platform && auger ask '<your question>'"
+
+    Recovery if the platform dies:
+      docker exec -d -e DISPLAY=:1 auger-platform bash -c "auger start"
+
+    The host terminal context for auger CLI is safe because it runs OUTSIDE the container process.
+    The in-platform Ask Auger shares process space with the UI — any restart kills both.
+- id: use-pil-not-emoji-for-widget-ui
+  severity: ERROR
+  title: "Never use emoji in Radiobutton labels or ttk.Notebook tab text — use PIL images"
+  body: >
+    Colored emoji (e.g. 🟢🔴🟡🚀📋) in tk.Radiobutton labels or ttk.Notebook tab text
+    cause a Tk/X11 C-level SIGSEGV (exit 139) that kills the entire container.
+    This cannot be caught by Python try/except.
+
+    ALWAYS use PIL-drawn icons instead of emoji for:
+      - ttk.Notebook tab labels (image= + compound=tk.LEFT, NOT text with emoji)
+      - tk.Radiobutton labels (use indicatoron=False for button-bar style)
+
+    Safe places for emoji (won't crash):
+      - tk.Label text
+      - tk.Button text
+      - win.title()
+      - tk.Text / scrolledtext content
+
+    Pattern for Notebook tabs with PIL icons:
+      self._tab_icons = {}   # GC guard — must keep reference
+      self._tab_icons['pods'] = ImageTk.PhotoImage(make_pods_icon(size=15))
+      nb.add(frame, image=self._tab_icons['pods'], text=' Pods', compound=tk.LEFT)
+
+    Pattern for toolbar cluster/option selectors (no double-indicator):
+      rb = tk.Radiobutton(..., indicatoron=False, selectcolor=ACCENT, ...)
+- id: emoji-only-unsafe-in-ttk-notebook-tabs
+  name: Emoji crash rule - only ttk.Notebook.add(text=) is unsafe
+  enforcement: error
+  scope: widget_development
+  rule: |
+    Color emoji cause a C-level SIGSEGV (exit 139) ONLY when used in ttk.Notebook.add(text="...emoji...").
+    SAFE uses of emoji (use freely):
+      - tk.Label(text="emoji")
+      - tk.Button(text="emoji")
+      - ttk.Treeview.insert() node labels
+      - tk.Text widget content
+      - Status bar strings / tk.StringVar
+      - Window titles / print() / logging
+    UNSAFE - use PIL icons instead:
+      - notebook.add(frame, text="emoji tab name")  ← SIGSEGV
+    fonts-noto-color-emoji MUST be installed in Docker image for emoji to render
+    in Labels/Buttons/Trees. Without it, emoji display as [] squares (not a crash).
+    When creating new tabs: strip emoji from text=, use deferred PIL icon via
+    self.after(0, self._apply_tab_icons).
+- id: emoji-do-not-over-strip
+  name: Do not over-strip emoji - only unsafe in ttk.Notebook.add text
+  enforcement: error
+  scope: widget_development
+  rule: |
+    When fixing emoji crashes ONLY strip emoji from ttk.Notebook.add(text=...).
+    Do NOT strip emoji from Labels, Buttons, Treeview nodes, Text widgets, status
+    bars, window titles. Over-stripping causes emoji to render as squares in safe contexts.
+    Surgical fix:
+      WRONG: remove all emoji from widget file
+      RIGHT: only strip from notebook.add(frame, text=strip_emoji(name))
+    If emoji show as squares in Labels/Buttons, install fonts-noto-color-emoji in
+    Docker image - NOT by removing the emoji.
+- id: tasks-db-direct-sqlite-update
+  name: Always update tasks.db directly via Python sqlite3
+  enforcement: error
+  scope: task_management
+  rule: Always execute tasks.db changes directly via Python sqlite3 inline. Never
+    give the user paste instructions to run manually. The Tasks widget auto-refreshes
+    every 5s — changes appear immediately.
+- id: staging-deploy-requires-jira-and-confluence
+  name: Staging deploys require Jira story and Confluence deployment instructions
+  enforcement: error
+  scope: global
+  rule: |
+    DO NOT deploy anything to any staging environment without BOTH:
+      1. A Jira story covering the work being deployed
+      2. Deployment instructions documented in Confluence
+    Treat ALL staging environments with the same release discipline as production.
+    If either artifact is missing, stop and get the Jira story / Confluence deployment
+    instructions in place before proceeding with the staging deployment.
+- id: jira-stories-default-to-optimizers-team
+  name: New Jira stories for Bobby should default Development Team to Optimizers
+  enforcement: warn
+  scope: jira_operations
+  rule: |
+    When creating or fixing Jira stories for Bobby in the ASSIST3 project, set the
+    "Development Team" field to "Optimizers" unless the user explicitly says otherwise.
+    This field affects visibility on the Optimizers Kanban board. If a story created by
+    Auger is missing from the board, verify at minimum:
+      1. Parent / Epic relationship is correct for the work stream
+      2. Development Team = Optimizers
+    Preserve the story's current workflow state when correcting these board-driving fields.
+- id: data-team-repo-scope
+  name: Data-team repo scope excludes automated-test repo and includes assist-jupyterhub
+  enforcement: info
+  scope: global
+  rule: |
+    For Auger reporting, audits, and recommendations, treat the data-team/data-tools
+    repo scope as the 12 assist org repos that use DATA_1.x.x.x release branches,
+    EXCLUDING assist-data-api-service-automated-test, PLUS assist-jupyterhub as
+    an explicit anomaly/include. Do NOT exclude assist-jupyterhub just because
+    its repo name does not start with assist-data-. Unless the user says otherwise,
+    use this 13-repo scope for requests about "data repos", "data team repos",
+    and "data tools".
+- id: data-tools-flux-release-pr-conventions
+  name: Data-tools Flux release PRs follow Jenkins tags and env-specific rules
+  enforcement: warn
+  scope: global
+  rule: |
+    For recurring data-tools Flux release PR work after a production deployment,
+    follow these conventions unless the user says otherwise:
+      1. Use the established data-team/data-tools repo scope for Flux work, but
+         exclude assist-data-help-cms.
+      2. Use successful Jenkins/Prospector builds for the deployed release branch as
+         the source of truth for exact image tags.
+      3. Create separate environment PRs (typically dev and staging) against
+         deploy-automation, not main, and not as one combined PR.
+      4. Preserve `.ignore` files as `.ignore` and update tags only; never enable a
+         workload that is currently absent or ignored in that environment.
+      5. Dev may require `core/base/image-policy/<release>.yaml` when dev Flux configs
+         still reference image policies for that release line.
+      6. Staging does not use `core/base/image-policy` auto-deploy updates; do not add
+         or modify staging image-policy files as part of these PRs.
+      7. If an ignored manifest points at third-party chart-default images rather than
+         ASSIST workload images, leave it unchanged and call out the exception explicitly.
+      8. Treat Airflow as the deployment surface for data-pipeline-dags unless the repo
+         has its own direct Flux image reference.
+      9. Finish with a concise per-environment summary including deploy-automation
+         PR links and exceptions.
+- id: show-minimum-prompt
+  name: After each response show the minimum prompt that would have worked
+  severity: INFO
+  body: |
+    At the end of each assistant response, show the shortest prompt the user could
+    have typed to get the same result. Format as a single italicized line:
+    _💬 Min prompt: "..."_  Keep it under 15 words. This trains users to speak concisely.
+- id: build-and-push-via-daemon-tool
+  name: Build and push Auger image via host daemon registered tool
+  enforcement: warn
+  scope: host_tools
+  rule: |
+    To build+push auger-platform:latest to Artifactory from inside the container:
+    1. Register build_push_auger tool via POST http://127.0.0.1:7437/ with exec_cmd
+       that sources ~/.auger/.env, runs docker compose build with proxy build-args,
+       docker tag, docker login, docker push.
+    2. Launch via action=launch_tool tool=build_push_auger.
+    3. Monitor tail -f ~/.auger/build_push.log.
+    4. On BUILD_PUSH_SUCCESS, notify AUGER_POC GChat channel.
+    CRITICAL: Docker build MUST pass --build-arg http_proxy=http://127.0.0.1:9000
+    --build-arg https_proxy=http://127.0.0.1:9000 or apt-get fails DNS inside the build.
+    Dockerfile already declares all four ARGs.
+    exec_cmd runs as the host user (whoever installed Auger).
+    Do NOT use /rebuild endpoint for publish builds - it restarts the running container.
+    Tool persists in host_tools.json - no re-registration needed on subsequent builds.
+- id: namespace-naming-conventions
+  name: ASSIST environment namespace naming conventions
+  enforcement: warn
+  scope: cluster_operations
+  rule: |
+    NAMESPACE ALIASES — always translate correctly:
+      "training"   = stage10  (URL: training.staging.assist.mcaas.fcs.gsa.gov)
+      "pre-prod"   = stage06  (closest environment to production)
+      dev envs     = dev01 through dev09  (development cluster)
+      staging envs = stage01 through stage10  (NOT staging01, NOT staging1)
+    DB CREDENTIALS:
+      "selector" user = same password across ALL dev and staging namespaces.
+        Used 99.9% of the time for SRE database connections.
+      Per-service users (e.g. aasbs_app for assist2-services) have unique
+        cryptkeeper-encrypted passwords per namespace.
+      The DB hostname is shared across all services within a given namespace
+        (e.g. all dev01 services share the same postgres host/db).
+    FLUX CONFIG LOCATIONS (verified in assist-flux-config):
+      development: core/development/dev01 … dev09/
+      staging:     core/staging/stage01 … stage10/
+      production:  core/production/ (managed via assist-prod-flux-config)
+    Never reference "staging10", "staging06", or "dev-01" — use stage##/dev## format.
+
+- id: long-running-process-status-updates
+  title: "Report status every ~60s during long-running processes"
+  rule: >
+    When monitoring a long-running background process (docker build, pip install,
+    large file transfer, test suite, etc.), proactively output a status update
+    approximately every 60 seconds — even if there is nothing new to report.
+    Include: what step is running, elapsed time, and what to expect next.
+    Do NOT wait silently for completion. This prevents user session timeouts
+    and keeps the user informed. Example: "Still building — Step 34/52,
+    apt-get installing packages (~5 min remaining)."

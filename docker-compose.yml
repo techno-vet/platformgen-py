@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  auger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_HASH: ${BUILD_HASH:-unknown}
+    image: auger-platform:latest
+    container_name: auger-platform
+    hostname: auger-platform
+
+    # DNS for github.com resolution (AWS VPC DNS doesn't resolve github.com)
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+    # X11 Display for GUI - all other config/tokens come from ~/.auger/.env
+    environment:
+      - DISPLAY=${DISPLAY:-:1}
+      - HOME=/home/auger
+      - PATH=/home/auger/.local/bin:/usr/local/bin:/usr/bin:/bin
+      # Pass Copilot auth tokens from host env (any one of these is sufficient)
+      - GH_TOKEN=${GH_TOKEN:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:-}
+    
+    # Run as host user so bind-mounted ~/.auger is writable
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    
+    # Volume mounts for persistent data and host integration
+    volumes:
+      # Application code (for development)
+      - .:/home/auger/auger-platform
+      
+      # Config directory (shared with host - same .env for local and docker)
+      - ${HOME}/.auger:/home/auger/.auger
+
+      # GitHub Copilot CLI package cache (avoids permission errors in container)
+      - ${HOME}/.copilot:/home/auger/.copilot
+
+      # Kubeconfig (read-only from host)
+      - ${HOME}/.kube:/home/auger/.kube:ro
+      
+      # Docker socket (for docker commands)
+      - /var/run/docker.sock:/var/run/docker.sock
+      
+      # X11 socket for GUI
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      
+      # Git config (optional)
+      - ${HOME}/.gitconfig:/home/auger/.gitconfig:ro
+      
+      # SSH keys (optional, for git operations)
+      - ${HOME}/.ssh:/home/auger/.ssh:ro
+    
+    # Network mode
+    network_mode: host
+    
+    # Security
+    security_opt:
+      - seccomp:unconfined
+    
+    # Keep container running
+    stdin_open: true
+    tty: true
+    
+    # Command
+    command: /bin/bash
+
+volumes: {}

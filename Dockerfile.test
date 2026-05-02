@@ -1,0 +1,70 @@
+# Auger Platform - Test Container
+# Clean environment for testing installation process
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install minimal dependencies (simulate fresh user environment)
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    python3-tk \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    gnupg \
+    # X11 minimal
+    xvfb \
+    x11-apps \
+    libx11-6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Zscaler Root Certificate
+ADD zscaler_certs/ZscalerRootCertificate-2048-SHA256.crt /usr/local/share/ca-certificates/ZscalerRootCertificate.crt
+RUN chmod 644 /usr/local/share/ca-certificates/ZscalerRootCertificate.crt
+
+# Add Amazon Root CA certificates (for AWS)
+RUN curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA1.pem -o /usr/local/share/ca-certificates/AmazonRootCA1.crt && \
+    curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA2.pem -o /usr/local/share/ca-certificates/AmazonRootCA2.crt && \
+    curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA3.pem -o /usr/local/share/ca-certificates/AmazonRootCA3.crt && \
+    curl -fsSL https://www.amazontrust.com/repository/AmazonRootCA4.pem -o /usr/local/share/ca-certificates/AmazonRootCA4.crt && \
+    chmod 644 /usr/local/share/ca-certificates/AmazonRootCA*.crt
+
+# Update CA certificates bundle
+RUN update-ca-certificates
+
+# Configure pip and other tools to use system certificates
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y gh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install standalone Copilot CLI (recommended by GitHub)
+RUN curl -fsSL https://gh.io/copilot-install | bash
+
+# Create test user
+RUN useradd -m -s /bin/bash testuser && \
+    mkdir -p /home/testuser && \
+    chown -R testuser:testuser /home/testuser
+
+USER testuser
+WORKDIR /home/testuser
+
+# Create a writable build directory
+RUN mkdir -p /home/testuser/.cache/pip
+
+# Don't pre-install anything - test fresh install
+ENV PATH="/home/testuser/.local/bin:$PATH"
+
+CMD ["/bin/bash"]

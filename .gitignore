@@ -1,8 +1,70 @@
-.DS_Store
+# Python
 __pycache__/
-*.pyc
-.venv/
-venv/
-dist/
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Secrets
+.env
+config.yaml
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Auger specific — only ignore the top-level data/ cache dir, not auger/data/ package
+/data/
+*.session
+.auger/
+
+# Temporary
+*.tmp
+*.bak
+*.orig
+
+# Environment
+.env
+.env.local
+
+# Docker
+docker-compose.override.yml
+node_modules

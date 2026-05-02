@@ -1,0 +1,163 @@
+# Auger SRE Platform — Alpha Tester Onboarding Guide
+
+**Version:** 1.0 (Alpha)
+**Audience:** New Alpha Testers
+**Updated:** March 2026
+
+---
+
+## Welcome to Auger Alpha
+
+You're one of the first people outside the SRE core team to use Auger. Your feedback will directly shape the platform. This guide gets you from zero to running in under 30 minutes.
+
+---
+
+## Prerequisites
+
+- Access to the ASSIST GHE org (`github.helix.gsa.gov/assist`)
+- GSA workstation with Python 3.10+ and Docker (optional)
+- Personal access tokens for: GHE, Jira, Jenkins, Artifactory (the platform will guide you through generating these)
+- Added to the `Auger POC` GChat space
+
+---
+
+## Installation
+
+### Option A: Container (Recommended for Alpha)
+
+```bash
+# Pull and run
+docker pull <artifactory-url>/auger-platform:latest
+docker run -it \
+  -e GHE_TOKEN=<your-token> \
+  -v ~/.auger:/root/.auger \
+  auger-platform:latest
+```
+
+### Option B: Local Python
+
+```bash
+# Clone
+git clone https://github.helix.gsa.gov/assist/auger-ai-sre-platform.git
+cd auger-ai-sre-platform
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure credentials
+cp .env.example ~/.auger/.env
+# Edit ~/.auger/.env with your tokens (see API Config widget)
+
+# Run
+python -m auger
+```
+
+---
+
+## First Launch
+
+1. The app opens with a dark-themed desktop window
+2. The **Home** tab shows platform status and recent activity
+3. Click **Widgets** in the menu bar to open any widget in a new tab
+4. Click **Ask Auger** (bottom panel) to interact with the AI assistant
+
+---
+
+## Your First 5 Actions (Alpha Checklist)
+
+### 1. Configure your API credentials
+- Open **Widgets → API Config**
+- Add your GHE token, Jira token, Jenkins credentials
+- Click **Test** next to each — green ✅ means connected
+
+### 2. View the Story→Prod pipeline for an active story
+- Open **Widgets → Story → Prod**
+- Enter a Jira story key (e.g., `ASSIST3-12345`)
+- Click **Run Pipeline**
+- Watch all 8 stages populate: Jira → Branch/PR → Dev → Build → Image → Flux (DEV/STG/PRD) → Pods
+
+### 3. Check pod health in your namespace
+- Open **Widgets → K8s Explorer**
+- Select your namespace from the dropdown
+- Click a pod → use the **Logs**, **Describe**, **Env Vars** tabs
+
+### 4. Send a test message to a GChat channel
+- Open **Widgets → GChat**
+- Select **PR Reviews** from the webhook dropdown
+- Type a message → click **Send**
+
+### 5. Ask Auger a question
+- In the Ask Auger panel at the bottom, type: `What's the latest image tag for data-utils in staging?`
+- Auger will check the flux cache and respond
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+T` | Open a new widget tab |
+| `Ctrl+W` | Close current tab |
+| `Ctrl+R` | Hot-reload current widget |
+| Right-click tab | Close / detach tab |
+
+---
+
+## How to Report a Bug
+
+1. Open **Widgets → Tasks** — click **+** to add a bug task
+2. Or: drop a message in the **Auger POC** GChat space
+3. Include: what widget, what you did, what happened, what you expected
+
+**P1 bugs** (crash, data loss, wrong env deployed): ping `@bobby.blair` in GChat immediately.
+
+---
+
+## Things to Try (Alpha Test Scenarios)
+
+| Scenario | Widgets Used |
+|----------|-------------|
+| Find why a pod is crashlooping | K8s Explorer → Logs + Describe |
+| Trace a story from Jira to live pods | Story→Prod |
+| Promote a DEV image to STAGING | Story→Prod → Flux stage → Create PR |
+| Encrypt a secret for deployment | Cryptkeeper |
+| Scan an image for CVEs | Prospector |
+| Check what's different between DEV and STG flux | Flux Config → compare environments |
+| Run a quick DB query | Database widget → SELECT from aasbs schema |
+
+---
+
+## Known Alpha Limitations
+
+- Hot-reload sometimes requires a manual `Ctrl+R` after major edits
+- The Panner widget is Phase 1 only — full panoramic view coming in Beta
+- Story→Prod pipeline requires the flux cache to be populated (`~/.auger/flux_cache/`) — run `git clone` of flux repos on first use
+- Some widgets show "Not Connected" until API Config is fully populated
+
+---
+
+## FAQ
+
+**Q: Why does the app use a desktop window instead of a browser?**
+A: Tkinter desktop gives us direct access to `kubectl`, local file system, and subprocess execution without a backend server. No additional infrastructure, no auth layer, no network exposure.
+
+**Q: Is Auger sending my data anywhere?**
+A: No ASSIST data leaves the GSA network. See `ROLLOUT_SECURITY_PRIVACY.md` for full details.
+
+**Q: What if I break something?**
+A: Auger creates PRs, not direct pushes. The worst that can happen is a PR with wrong content — just close it. Nothing is irreversible.
+
+**Q: Can I add my own widget?**
+A: Yes — see `docs/QUICKSTART.md` for the widget development guide. Drop a message in Auger POC if you want to build one.
+
+---
+
+## Support
+
+- **GChat:** Auger POC space (all updates, bug reports, feature requests)
+- **SRE Lead:** Bobby Blair (`@bobby.blair`)
+- **Tasks:** Visible in the Tasks widget in real time
+
+---
+
+*Document generated by Auger AI · ASSIST SRE Platform · Draft v1.0*

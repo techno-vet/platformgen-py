@@ -1,0 +1,11 @@
+dockerfiles_flux2-helm-controller
+dockerfiles_flux2-image-reflector-controller
+dockerfiles_istio-pilot
+dockerfiles_cluster-autoscaler
+dockerfiles_external-secrets
+dockerfiles_flux2-notification-controller
+dockerfiles_flux2-kustomize-controller
+dockerfiles_datadog-agent
+dockerfiles_snapshot-controller
+dockerfiles_istio-proxyv2
+dockerfiles_aws-for-fluent-bit

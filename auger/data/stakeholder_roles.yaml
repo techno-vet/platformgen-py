@@ -1,0 +1,53 @@
+# Auger Story→Prod Stakeholder Role Map
+# Used by the @mention system to route block events to the right person.
+#
+# email must match an entry in gchat_users.yaml for @mention to resolve.
+# trigger_on lists the block event types that will ping this role.
+#
+# Block event types:
+#   build_failure       — Jenkins build failed on story branch
+#   merge_conflict      — Git merge conflict on story branch
+#   pr_stale            — PR open > 24h with no activity
+#   code_question       — Auger can't determine correct code change
+#   flux_pr_needs_approval — Flux config PR waiting on 2nd approver
+#   prod_drift          — Prod image tag behind latest build
+#   prod_incident       — Pod crash/error in prod namespace
+#   infra_block         — Kubernetes/cluster level issue
+#   scope_question      — Story requirements unclear or conflicting
+#   priority_question   — Competing priorities need human decision
+
+roles:
+
+  developer:
+    description: Story assignee — handles code, build, and PR issues
+    # Resolved dynamically from Jira assignee field (email lookup in gchat_users.yaml)
+    # Falls back to sre_lead if Jira assignee has no GChat user ID
+    source: jira_assignee
+    trigger_on:
+      - build_failure
+      - merge_conflict
+      - code_question
+      - pr_stale
+
+  sre_lead:
+    description: SRE lead — handles infra, prod incidents, Flux approvals
+    email: bobby.blair@gsa.gov
+    trigger_on:
+      - flux_pr_needs_approval
+      - prod_drift
+      - prod_incident
+      - infra_block
+
+  release_manager:
+    description: Release manager — handles deployment coordination, priority calls
+    email: bobby.blair@gsa.gov
+    trigger_on:
+      - flux_pr_needs_approval
+      - prod_drift
+
+  product_owner:
+    description: Product owner — handles scope and priority decisions
+    email: jason.fulmer@gsa.gov
+    trigger_on:
+      - scope_question
+      - priority_question
