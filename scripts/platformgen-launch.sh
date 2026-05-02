@@ -16,6 +16,7 @@ export AUGER_TASK_TRAY_TITLE="${AUGER_TASK_TRAY_TITLE:-PlatformGen Task Tray}"
 export AUGER_DESKTOP_SLUG="${AUGER_DESKTOP_SLUG:-platformgen}"
 export AUGER_LAUNCHER_SCRIPT="${AUGER_LAUNCHER_SCRIPT:-$SCRIPT_DIR/platformgen-launch.sh}"
 export AUGER_TRAY_START_SCRIPT="${AUGER_TRAY_START_SCRIPT:-$SCRIPT_DIR/start-platformgen-tray.sh}"
+export AUGER_REPO_DIR="${AUGER_REPO_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 "$SCRIPT_DIR/bootstrap-platformgen-state.sh"
 exec bash "$SCRIPT_DIR/auger-launch.sh" "$@"

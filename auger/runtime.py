@@ -39,3 +39,19 @@ def daemon_url() -> str:
 def window_class() -> str:
     return os.environ.get("AUGER_WM_CLASS", "auger-platform")
 
+
+def repo_dir() -> Path | None:
+    configured = os.environ.get("AUGER_REPO_DIR")
+    if configured:
+        path = Path(configured).expanduser()
+        if (path / ".git").exists():
+            return path
+    for candidate in [
+        Path(__file__).resolve().parents[1],
+        Path.cwd(),
+        Path.home() / "projects" / "platformgen-py",
+        Path.home() / "repos" / "auger-ai-sre-platform",
+    ]:
+        if (candidate / ".git").exists():
+            return candidate
+    return None

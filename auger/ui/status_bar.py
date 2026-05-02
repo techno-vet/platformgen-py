@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 
+from auger.runtime import app_name, daemon_url, repo_dir
+
 try:
     from zoneinfo import ZoneInfo
     _ET = ZoneInfo("America/New_York")
@@ -35,19 +37,7 @@ GREEN   = "#4ec9b0"
 RED     = "#f44747"
 YELLOW  = "#f0c040"
 
-DAEMON_URL = "http://localhost:7437"
-
-_REPO_CANDIDATES = [
-    Path("/home/auger/repos/auger-ai-sre-platform"),
-    Path.home() / "repos" / "auger-ai-sre-platform",
-]
-
-
-def _find_repo():
-    for c in _REPO_CANDIDATES:
-        if (c / ".git").exists():
-            return c
-    return None
+DAEMON_URL = daemon_url()
 
 
 def _git(repo, *args, timeout=8):
@@ -67,7 +57,8 @@ def _get_version():
         return _iv("auger-platform")
     except Exception:
         pass
-    for c in _REPO_CANDIDATES:
+    candidates = [r for r in [repo_dir(), Path.cwd()] if r]
+    for c in candidates:
         try:
             for line in (c / "pyproject.toml").read_text().splitlines():
                 if line.strip().startswith("version"):
@@ -119,7 +110,7 @@ class AugerStatusBar(tk.Frame):
         self.pack_propagate(False)
 
         self._content = content_ref
-        self._repo    = _find_repo()
+        self._repo    = repo_dir()
         self._version = _get_version()
 
         tk.Frame(self, bg="#3c3c3c", height=1).pack(side=tk.TOP, fill=tk.X)
@@ -132,7 +123,7 @@ class AugerStatusBar(tk.Frame):
         left.pack(side=tk.LEFT, padx=(8, 0))
 
         self._lbl_ver = tk.Label(
-            left, text=f"Auger v{self._version}",
+            left, text=f"{app_name()} v{self._version}",
             bg=BG_PILL, fg=FG_DIM, font=("Consolas", 8), padx=5, pady=0,
         )
         self._lbl_ver.pack(side=tk.LEFT, padx=(0, 5), pady=3)
