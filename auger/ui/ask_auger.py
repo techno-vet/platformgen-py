@@ -42,8 +42,12 @@ class AskAugerPanel(tk.Frame):
         self._history_dir = state_dir() / "logs" / "chat_history"
         self._history_dir.mkdir(parents=True, exist_ok=True)
         self._history_file = self._history_dir / "conversations.jsonl"
+        self._status_file = self._history_dir / "work_status.jsonl"
+        self._pending_response_file = self._history_dir / "pending_response.json"
         self._draft_file = self._history_dir / "draft.txt"
         self._auto_save_id = None
+        self._live_response_chunks = []
+        self._live_response_prompt = ""
 
         # Shared chat history watcher (cross-source: terminal, host, container)
         self._chat_history_file = state_dir() / "chat_history.jsonl"
@@ -369,6 +373,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self._save_to_history('user', prompt)
         # Tag in shared chat_history.jsonl so watcher knows this came from the panel
         self._write_chat_history('user', prompt, source='panel')
+        self._begin_live_response(prompt)
         
         # Clear input and draft
         self._last_prompt = prompt  # save for post-response footer
@@ -402,6 +407,11 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         # Check for slash command — route to daemon
         daemon_action = self._detect_host_intent(prompt)
         if daemon_action:
+            if daemon_action in ('restart_auger', 'rebuild_auger'):
+                note = f"[{product_name()} lifecycle] Requested {daemon_action.replace('_', ' ')}"
+                self._save_to_history('system', note)
+                self._append_status_note(note, kind='lifecycle')
+                self._write_chat_history('system', note, source='panel')
             thread = threading.Thread(
                 target=self._run_via_daemon, args=(prompt, daemon_action), daemon=True)
             thread.start()
@@ -470,6 +480,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                             full = '\n'.join(response_lines)
                             self._save_to_history('assistant', full)
                             self._check_for_widget_code(full)
+                            self._clear_pending_response()
                             self._queue.put(('done', None))
                             return
                         elif msg_type == 'error':
@@ -517,6 +528,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
             
             # Save response to history
             self._save_to_history('assistant', full_response)
+            self._clear_pending_response()
             
             # Done — pass optional callback so caller can react
             self._queue.put(('done', on_complete))
@@ -565,9 +577,11 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 
                 if msg_type == 'line':
                     self.response.append_markdown(data)
+                    self._track_live_response_chunk(data)
                 
                 elif msg_type == 'error':
                     self.response.append_markdown(f"**❌ Error:** {data}\n")
+                    self._save_pending_response_note(f"[Error before completion]\n{data}")
                     self.status_label.config(text="Error")
                     self._set_ready(check_lock=True)
                 
@@ -575,6 +589,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                     self.status_label.config(text="Ready")
                     self._set_ready(check_lock=True)
                     self._append_prompt_footer()
+                    self._clear_pending_response()
                     if data:  # on_complete callback
                         data()
                 
@@ -923,6 +938,112 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 f.write(json.dumps(entry) + '\n')
         except Exception as e:
             print(f"Failed to save history: {e}")
+
+    def _append_status_note(self, note, kind='info'):
+        """Persist a restart-safe work-status note shown on the next launch."""
+        try:
+            entry = {
+                'timestamp': datetime.now().isoformat(),
+                'kind': kind,
+                'content': note,
+            }
+            with open(self._status_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(entry) + '\n')
+        except Exception as e:
+            print(f"Failed to save status note: {e}")
+
+    def _restore_status_notes(self):
+        """Restore recent restart-safe work-status notes."""
+        try:
+            if not self._status_file.exists():
+                return
+            cutoff = datetime.now() - timedelta(days=2)
+            notes = []
+            with open(self._status_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line.strip())
+                        ts = datetime.fromisoformat(entry['timestamp'])
+                        if ts >= cutoff:
+                            notes.append(entry)
+                    except Exception:
+                        continue
+            if not notes:
+                return
+            self.response.append_markdown("### [STATUS] Recent Work Notes\n\n", scroll=False)
+            for note in notes[-12:]:
+                ts = note.get('timestamp', '')
+                content = (note.get('content') or '').strip()
+                if not content:
+                    continue
+                self.response.append_markdown(f"- `{ts}` {content}\n", scroll=False)
+            self.response.append_markdown("\n---\n\n", scroll=False)
+        except Exception as e:
+            print(f"Failed to restore status notes: {e}")
+
+    def _begin_live_response(self, prompt):
+        self._live_response_chunks = []
+        self._live_response_prompt = prompt
+        self._save_pending_response()
+
+    def _track_live_response_chunk(self, chunk):
+        if not self._live_response_prompt:
+            return
+        self._live_response_chunks.append(chunk)
+        self._save_pending_response()
+
+    def _save_pending_response_note(self, note):
+        if not self._live_response_prompt:
+            return
+        self._live_response_chunks.append(f"\n{note}\n")
+        self._save_pending_response()
+
+    def _save_pending_response(self):
+        try:
+            payload = {
+                'timestamp': datetime.now().isoformat(),
+                'product': product_name(),
+                'assistant': assistant_name(),
+                'prompt': self._live_response_prompt,
+                'content': ''.join(self._live_response_chunks).strip(),
+            }
+            self._pending_response_file.write_text(json.dumps(payload), encoding='utf-8')
+        except Exception as e:
+            print(f"Failed to save pending response: {e}")
+
+    def _clear_pending_response(self):
+        self._live_response_chunks = []
+        self._live_response_prompt = ""
+        try:
+            if self._pending_response_file.exists():
+                self._pending_response_file.unlink()
+        except Exception as e:
+            print(f"Failed to clear pending response: {e}")
+
+    def _restore_pending_response(self):
+        try:
+            if not self._pending_response_file.exists():
+                return
+            payload = json.loads(self._pending_response_file.read_text(encoding='utf-8'))
+            prompt = (payload.get('prompt') or '').strip()
+            content = (payload.get('content') or '').strip()
+            timestamp = (payload.get('timestamp') or '').strip()
+            if not prompt and not content:
+                return
+            self.response.append_markdown("### [RECOVERED] In-Progress Reply From Before Restart\n\n", scroll=False)
+            if prompt:
+                self.response.append_raw('\n', scroll=False)
+                self.response.append_markdown(f"### [YOU]\n{prompt}\n", scroll=False)
+                self.response.append_raw('\n', scroll=False)
+            if content:
+                self.response.append_markdown(content + "\n", scroll=False)
+                self.response.append_raw('\n', scroll=False)
+            if timestamp:
+                self.response.append_markdown(f"*Recovered from pending response saved at {timestamp}*\n\n", scroll=False)
+            self.response.append_markdown("---\n\n", scroll=False)
+            self.response.see(tk.END)
+        except Exception as e:
+            print(f"Failed to restore pending response: {e}")
     
     def _restore_history(self):
         """Restore last 2 days of chat history on startup.
@@ -930,10 +1051,11 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         Note: Only displays recent history for performance, but the complete
         history is preserved in the JSONL file and never deleted.
         """
-        if not self._history_file.exists():
-            return
-        
         try:
+            if not self._history_file.exists():
+                self._restore_status_notes()
+                self._restore_pending_response()
+                return
             cutoff = datetime.now() - timedelta(days=2)
             restored_messages = []
             
@@ -951,7 +1073,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
             if restored_messages:
                 self.response.append_markdown("### [RESTORED] Chat History (Last 2 Days)\n\n", scroll=False)
 
-                for msg in restored_messages:
+                for msg in restored_messages[-60:]:
                     content = msg['content']
 
                     if msg['role'] == 'user':
@@ -959,12 +1081,14 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                         self.response.append_markdown(f"### [YOU]\n{content}\n", scroll=False)
                         self.response.append_raw('\n', scroll=False)
                     else:
-                        self.response.append_markdown(content, scroll=False)
+                        self.response.append_markdown(f"### [{assistant_name().upper()}]\n{content}\n", scroll=False)
                         self.response.append_raw('\n', scroll=False)
 
                 self.response.append_markdown("\n---\n\n", scroll=False)
                 # Scroll to bottom once after all history is loaded
                 self.response.see(tk.END)
+            self._restore_status_notes()
+            self._restore_pending_response()
                 
         except Exception as e:
             print(f"Failed to restore history: {e}")

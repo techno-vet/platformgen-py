@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 import requests
 from auger.ui.utils import make_text_copyable, bind_mousewheel, add_treeview_menu, auger_home as _auger_home
+from auger.runtime import state_dir
 from auger.ui import icons as _icons
 
 # ── Colour palette (matches Auger theme) ───────────────────────────────────
@@ -311,7 +312,7 @@ class K8sExplorerWidget(tk.Frame):
         super().__init__(parent, bg=BG, **kwargs)
         self.context_builder_callback = context_builder_callback
 
-        load_dotenv(_auger_home() / '.auger' / '.env')
+        load_dotenv(state_dir() / '.env')
         self._rancher_url   = os.environ.get('RANCHER_URL', '').rstrip('/')
         self._rancher_token = os.environ.get('RANCHER_BEARER_TOKEN', '')
 
