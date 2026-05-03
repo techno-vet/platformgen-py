@@ -203,7 +203,7 @@ def _setup_html_tags(text_widget: tk.Text, open_url_fn):
     text_widget.tag_config('heading', font=('Segoe UI', 10, 'bold'),  foreground=ACCENT2)
     text_widget.tag_config('key',     font=('Segoe UI', 11, 'bold'),  foreground=ACCENT)
     text_widget.tag_config('status',  font=('Segoe UI', 9,  'bold'),  foreground=SUCCESS)
-    text_widget.tag_config('priority',font=('Segoe UI', 9),           foreground=WARN)
+    text_widget.tag_config('priority',font=('Segoe UI', 9),           foreground=WARNING)
     text_widget.tag_config('author',  font=('Segoe UI', 8,  'bold'),  foreground=FG2)
 
     # Pre-create a fixed pool of 60 numbered link tags — reused each render,
@@ -819,23 +819,25 @@ class JiraWidget(tk.Frame):
                 if proj:
                     jql = f'project = {proj} AND assignee = currentUser() ORDER BY updated DESC'
                 
-                url = f"{self._jira_url.rstrip('/')}/rest/api/3/search"
-                params = {
+                url = f"{self._jira_url.rstrip('/')}/rest/api/3/search/jql"
+                payload = {
                     'jql': jql,
                     'maxResults': 100,
-                    'fields': 'summary,status,priority,issuetype,created,updated'
+                    'fields': ['summary', 'status', 'priority', 'issuetype', 'created', 'updated']
                 }
-                
-                resp = requests.get(url, headers=self._jira_headers, params=params, timeout=10)
+
+                resp = requests.post(url, headers=self._jira_headers, json=payload, timeout=10)
                 resp.raise_for_status()
                 
                 issues = resp.json().get('issues', [])
                 self._q(lambda: self._populate_issue_view('_my_tree', issues))
                 self._q(lambda: self._status_var.set(f'{len(issues)} stories assigned to me'))
             except requests.exceptions.RequestException as e:
-                self._q(lambda: self._status_var.set(f'ERROR loading stories: {e}'))
+                msg = f'ERROR loading stories: {e}'
+                self._q(lambda msg=msg: self._status_var.set(msg))
             except Exception as e:
-                self._q(lambda: self._status_var.set(f'ERROR: {str(e)[:60]}'))
+                msg = f'ERROR: {str(e)[:60]}'
+                self._q(lambda msg=msg: self._status_var.set(msg))
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -848,9 +850,9 @@ class JiraWidget(tk.Frame):
 
         def _run():
             try:
-                # Get active sprint
+                # Find boards for the selected project (or all visible boards if blank)
                 board_url = f"{self._jira_url.rstrip('/')}/rest/agile/1.0/board"
-                board_params = {'projectKey': proj} if proj else {}
+                board_params = {'projectKeyOrId': proj} if proj else {}
                 
                 board_resp = requests.get(
                     board_url, headers=self._jira_headers, params=board_params, timeout=10
@@ -861,10 +863,30 @@ class JiraWidget(tk.Frame):
                 if not boards:
                     self._q(lambda: self._status_var.set('No boards found for project'))
                     return
-                
-                board_id = boards[0]['id']
-                
-                # Get active sprint for this board
+
+                sprint_board = next((b for b in boards if b.get('type') == 'scrum'), None)
+                if sprint_board is None:
+                    board = boards[0]
+                    board_id = board['id']
+                    issue_url = f"{self._jira_url.rstrip('/')}/rest/agile/1.0/board/{board_id}/issue"
+                    issue_params = {
+                        'maxResults': 100,
+                        'fields': 'summary,status,priority,issuetype,created,updated'
+                    }
+                    issue_resp = requests.get(
+                        issue_url, headers=self._jira_headers, params=issue_params, timeout=10
+                    )
+                    issue_resp.raise_for_status()
+                    issues = issue_resp.json().get('issues', [])
+                    board_name = board.get('name', 'board')
+                    self._q(lambda: self._populate_issue_view('_sprint_tree', issues))
+                    self._q(lambda board_name=board_name, count=len(issues):
+                            self._status_var.set(f'{count} issues on {board_name} (no sprints)'))
+                    return
+
+                board_id = sprint_board['id']
+
+                # Get active sprint for the first sprint-capable board
                 sprint_url = f"{self._jira_url.rstrip('/')}/rest/agile/1.0/board/{board_id}/sprint"
                 sprint_params = {'state': 'active'}
                 
@@ -896,9 +918,11 @@ class JiraWidget(tk.Frame):
                 self._q(lambda: self._populate_issue_view('_sprint_tree', issues))
                 self._q(lambda: self._status_var.set(f'{len(issues)} issues in active sprint'))
             except requests.exceptions.RequestException as e:
-                self._q(lambda: self._status_var.set(f'ERROR loading sprint: {e}'))
+                msg = f'ERROR loading sprint: {e}'
+                self._q(lambda msg=msg: self._status_var.set(msg))
             except Exception as e:
-                self._q(lambda: self._status_var.set(f'ERROR: {str(e)[:60]}'))
+                msg = f'ERROR: {str(e)[:60]}'
+                self._q(lambda msg=msg: self._status_var.set(msg))
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -1102,10 +1126,10 @@ class JiraWidget(tk.Frame):
 
         def _run():
             try:
-                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issues/{issue_key}"
+                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issue/{issue_key}"
                 params = {
                     'fields': 'summary,status,priority,issuetype,description,created,updated,comment,customfield_10022,customfield_10023',
-                    'expand': 'changelog'
+                    'expand': 'renderedFields,changelog'
                 }
                 
                 resp = requests.get(url, headers=self._jira_headers, params=params, timeout=10)
@@ -1318,7 +1342,7 @@ class JiraWidget(tk.Frame):
 
         def _run():
             try:
-                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issues/{issue_key}/transitions"
+                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issue/{issue_key}/transitions"
                 payload = {'transition': {'id': transition_id}}
                 
                 resp = requests.post(
@@ -1344,8 +1368,11 @@ class JiraWidget(tk.Frame):
             return
         def _run():
             try:
-                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issues/{issue_key}"
-                params = {'fields': 'summary,status,priority,issuetype,description,created,updated'}
+                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issue/{issue_key}"
+                params = {
+                    'fields': 'summary,status,priority,issuetype,description,created,updated,comment,customfield_10022,customfield_10023',
+                    'expand': 'renderedFields'
+                }
                 
                 resp = requests.get(url, headers=self._jira_headers, params=params, timeout=10)
                 resp.raise_for_status()
@@ -1373,7 +1400,7 @@ class JiraWidget(tk.Frame):
 
         def _run():
             try:
-                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issues/{key}/comments"
+                url = f"{self._jira_url.rstrip('/')}/rest/api/3/issue/{key}/comment"
                 payload = {'body': {'content': [{'type': 'paragraph', 'content': [{'type': 'text', 'text': body}]}]}}
                 
                 resp = requests.post(
