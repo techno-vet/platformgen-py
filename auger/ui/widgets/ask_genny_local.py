@@ -1,4 +1,4 @@
-"""Local Ollama-backed Ask Genny widget for PlatformGen."""
+"""Ask AImee widget backed by a configurable Ollama endpoint."""
 
 from __future__ import annotations
 
@@ -10,6 +10,9 @@ import tkinter as tk
 import urllib.request
 import urllib.error
 from tkinter import ttk
+from dotenv import load_dotenv
+
+from auger.runtime import state_dir
 
 BG = "#1e1e1e"
 BG2 = "#252526"
@@ -24,12 +27,14 @@ PURPLE = "#c586c0"
 FONT = ("Helvetica", 10, "normal")
 MONO = ("Courier New", 10, "normal")
 
-OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE", "http://localhost:11434"))
+def _ollama_base() -> str:
+    load_dotenv(state_dir() / ".env", override=True)
+    return os.environ.get("OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE", "http://localhost:11434")).rstrip("/")
 
 
 def _list_models() -> list[str]:
     try:
-        req = urllib.request.Request(f"{OLLAMA_BASE}/api/tags", headers={"Accept": "application/json"})
+        req = urllib.request.Request(f"{_ollama_base()}/api/tags", headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
         return [model["name"] for model in data.get("models", [])]
@@ -38,7 +43,7 @@ def _list_models() -> list[str]:
 
 
 class AskGennyLocalWidget(tk.Frame):
-    WIDGET_TITLE = "Ask Genny (Local LLM)"
+    WIDGET_TITLE = "Ask AImee"
     WIDGET_ICON_NAME = "terminal"
 
     def __init__(self, parent, **kwargs):
@@ -57,7 +62,7 @@ class AskGennyLocalWidget(tk.Frame):
         hdr = tk.Frame(self, bg=BG3, pady=4)
         hdr.pack(fill=tk.X)
 
-        tk.Label(hdr, text="Ask Genny (Local LLM)", bg=BG3, fg=ACC, font=("Helvetica", 11, "bold")).pack(side=tk.LEFT, padx=10)
+        tk.Label(hdr, text="Ask AImee", bg=BG3, fg=ACC, font=("Helvetica", 11, "bold")).pack(side=tk.LEFT, padx=10)
         tk.Label(hdr, text="Model:", bg=BG3, fg=FG2, font=FONT).pack(side=tk.LEFT, padx=(20, 4))
 
         self._model_combo = ttk.Combobox(hdr, textvariable=self._model_var, state="readonly", width=28, font=FONT)
@@ -195,7 +200,7 @@ class AskGennyLocalWidget(tk.Frame):
             self._run_plain(prompt)
 
     def _run_agent(self, prompt: str):
-        self._append("thinking", "Genny is thinking and may use tools...\n")
+        self._append("thinking", "AImee is thinking and may use tools...\n")
         runner = self._get_runner()
         runner.run(
             prompt,
@@ -213,7 +218,7 @@ class AskGennyLocalWidget(tk.Frame):
 
     def _emit_answer(self, text: str):
         self._chat.config(state=tk.NORMAL)
-        self._chat.insert(tk.END, "\nGenny: ", "genny_label")
+        self._chat.insert(tk.END, "\nAImee: ", "genny_label")
         self._chat.insert(tk.END, text.strip() + "\n\n", "genny_text")
         self._chat.config(state=tk.DISABLED)
         self._chat.see(tk.END)
@@ -228,7 +233,7 @@ class AskGennyLocalWidget(tk.Frame):
 
     def _run_plain(self, prompt: str):
         self._chat.config(state=tk.NORMAL)
-        self._chat.insert(tk.END, "Genny: ", "genny_label")
+        self._chat.insert(tk.END, "AImee: ", "genny_label")
         self._plain_start = self._chat.index(tk.END)
         self._chat.insert(tk.END, "...\n", "thinking")
         self._chat.config(state=tk.DISABLED)
@@ -242,7 +247,7 @@ class AskGennyLocalWidget(tk.Frame):
                     "stream": True,
                 }).encode()
                 req = urllib.request.Request(
-                    f"{OLLAMA_BASE}/api/chat",
+                    f"{_ollama_base()}/api/chat",
                     data=payload,
                     headers={"Content-Type": "application/json"},
                     method="POST",
@@ -269,10 +274,10 @@ class AskGennyLocalWidget(tk.Frame):
             {
                 "role": "system",
                 "content": (
-                    "You are Genny inside PlatformGen. "
+                    "You are AImee inside PlatformGen. "
                     "Do not identify yourself as Qwen, Alibaba Cloud, or a generic model name. "
-                    "Answer as Genny, the local PlatformGen assistant. "
-                    "If the user asks whether you are there, reply briefly and directly as Genny."
+                    "Answer as AImee, the local PlatformGen assistant. "
+                    "If the user asks whether you are there, reply briefly and directly as AImee."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -283,10 +288,10 @@ class AskGennyLocalWidget(tk.Frame):
             {
                 "role": "system",
                 "content": (
-                    "You are Genny inside PlatformGen. "
-                    "Respond as Genny, not as Qwen, Alibaba Cloud, or a generic model. "
+                    "You are AImee inside PlatformGen. "
+                    "Respond as AImee, not as Qwen, Alibaba Cloud, or a generic model. "
                     "Keep answers direct and helpful. "
-                    "If the user asks whether you are there, answer briefly as Genny."
+                    "If the user asks whether you are there, answer briefly as AImee."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -299,7 +304,7 @@ class AskGennyLocalWidget(tk.Frame):
             "stream": False,
         }).encode()
         req = urllib.request.Request(
-            f"{OLLAMA_BASE}/api/chat",
+            f"{_ollama_base()}/api/chat",
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",

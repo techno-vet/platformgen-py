@@ -188,6 +188,7 @@ class APIConfigWidget(tk.Frame):
         # Add all sections
         self._add_jenkins_section()
         self._add_openai_section()
+        self._add_local_ai_section()
         self._add_cloudflare_section()
         self._add_youtube_section()
         self._add_godaddy_section()
@@ -503,6 +504,98 @@ class APIConfigWidget(tk.Frame):
             self._log("OpenAI: ✗ Connection timeout", 'err')
         except Exception as e:
             self._log(f"OpenAI: ✗ Error: {str(e)[:80]}", 'err')
+
+    def _add_local_ai_section(self):
+        """Add local AI runtime section."""
+        self._add_section_header("Local AI", "")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "Ollama Base URL:", "OLLAMA_BASE_URL", default="http://localhost:11434")
+        self._add_field(section, "ComfyUI Base URL:", "COMFYUI_BASE_URL", default="http://localhost:8188")
+        self._add_field(section, "Default Checkpoint:", "COMFYUI_CHECKPOINT", default="v1-5-pruned-emaonly.safetensors")
+
+        help_label = tk.Label(
+            section,
+            text="Used by Ask AImee and the ComfyUI widget. Point these at localhost, a port-forward, or a K8s/ingress endpoint when the services move off-box.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        btn_frame = tk.Frame(section, bg='#1e1e1e')
+        btn_frame.pack(fill=tk.X, pady=(8, 0))
+        self._add_inline_test_button(btn_frame, "Test Ollama", self._test_ollama_runtime)
+        self._add_inline_test_button(btn_frame, "Test ComfyUI", self._test_comfyui_runtime)
+        self._add_divider()
+
+    def _add_inline_test_button(self, parent, label, callback):
+        btn = tk.Button(
+            parent,
+            text=label,
+            command=callback,
+            bg='#4ec9b0',
+            fg='#1e1e1e',
+            activebackground='#4ec9b0',
+            activeforeground='#1e1e1e',
+            relief=tk.FLAT,
+            cursor='hand2',
+            font=('Segoe UI', 9, 'bold'),
+            padx=12,
+            pady=4,
+        )
+        btn.pack(side=tk.RIGHT, padx=(8, 0))
+
+    def _test_ollama_runtime(self):
+        """Test the configured Ollama runtime."""
+        base_url = self.entries['OLLAMA_BASE_URL'].get().strip().rstrip('/')
+
+        if not base_url:
+            self._log("Local AI: Ollama base URL required", 'err')
+            return
+
+        try:
+            self._log(f"Local AI: Testing Ollama at {base_url} ...", 'info')
+            resp = requests.get(f"{base_url}/api/tags", timeout=10)
+            if resp.status_code == 200:
+                models = resp.json().get('models', [])
+                self._log(f"Local AI: ✓ Ollama reachable ({len(models)} model(s))", 'ok')
+            else:
+                self._log(f"Local AI: ✗ Ollama unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log(f"Local AI: ✗ Cannot reach Ollama at {base_url}", 'err')
+        except requests.exceptions.Timeout:
+            self._log("Local AI: ✗ Ollama connection timeout", 'err')
+        except Exception as e:
+            self._log(f"Local AI: ✗ Ollama error: {str(e)[:80]}", 'err')
+
+    def _test_comfyui_runtime(self):
+        """Test the configured ComfyUI runtime."""
+        base_url = self.entries['COMFYUI_BASE_URL'].get().strip().rstrip('/')
+
+        if not base_url:
+            self._log("Local AI: ComfyUI base URL required", 'err')
+            return
+
+        try:
+            self._log(f"Local AI: Testing ComfyUI at {base_url} ...", 'info')
+            resp = requests.get(f"{base_url}/system_stats", timeout=10)
+            if resp.status_code == 200:
+                devices = resp.json().get('devices', [])
+                device_names = ", ".join(d.get('name', 'device') for d in devices[:2]) or "no device metadata"
+                self._log(f"Local AI: ✓ ComfyUI reachable ({device_names})", 'ok')
+            else:
+                self._log(f"Local AI: ✗ ComfyUI unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log(f"Local AI: ✗ Cannot reach ComfyUI at {base_url}", 'err')
+        except requests.exceptions.Timeout:
+            self._log("Local AI: ✗ ComfyUI connection timeout", 'err')
+        except Exception as e:
+            self._log(f"Local AI: ✗ ComfyUI error: {str(e)[:80]}", 'err')
 
     def _add_cloudflare_section(self):
         """Add Cloudflare section."""

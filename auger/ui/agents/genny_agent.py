@@ -1,8 +1,9 @@
-"""Local Genny agent backed by Ollama with a lightweight native tool loop."""
+"""Local AImee agent backed by a configurable Ollama endpoint."""
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 import traceback
@@ -10,13 +11,18 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from auger.runtime import repo_dir
+from auger.runtime import repo_dir, state_dir
+from dotenv import load_dotenv
 
-OLLAMA_BASE = "http://localhost:11434"
 DEFAULT_MODEL = "qwen2.5-coder:14b"
 WORK_DIR = str(repo_dir() or Path.cwd())
 MAX_OUTPUT_CHARS = 4000
 MAX_STEPS = 6
+
+
+def _ollama_base() -> str:
+    load_dotenv(state_dir() / ".env", override=True)
+    return os.environ.get("OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE", "http://localhost:11434")).rstrip("/")
 
 
 def run_bash(command: str) -> str:
@@ -183,7 +189,7 @@ class GennyRunner:
             }
         ).encode()
         request = urllib.request.Request(
-            f"{OLLAMA_BASE}/api/chat",
+            f"{_ollama_base()}/api/chat",
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -211,7 +217,8 @@ class GennyRunner:
 
 def _system_prompt() -> str:
     return (
-        "You are Genny inside PlatformGen with access to live tools.\n"
+        "You are AImee inside PlatformGen with access to live tools.\n"
+        "Your assistant name is AImee.\n"
         f"Your working directory is: {WORK_DIR}\n"
         "When the answer depends on the current repo, branch, commit, files, CLI state, or shell output, "
         "you must use a tool instead of guessing.\n"

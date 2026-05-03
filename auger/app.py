@@ -277,13 +277,24 @@ class AugerSREPlatform(tk.Tk):
         )
 
         self.widgets_menu.add_command(
-            label="Ask Genny (Local LLM)",
+            label="Ask AImee",
             command=lambda: self.content.add_widget_tab(
-                "Ask Genny (Local LLM)",
+                "Ask AImee",
                 sys.modules.get(
                     "auger.ui.widgets.ask_genny_local",
                     __import__("auger.ui.widgets.ask_genny_local", fromlist=["AskGennyLocalWidget"])
                 ).AskGennyLocalWidget
+            )
+        )
+
+        self.widgets_menu.add_command(
+            label="ComfyUI",
+            command=lambda: self.content.add_widget_tab(
+                "ComfyUI",
+                sys.modules.get(
+                    "auger.ui.widgets.comfy_ui",
+                    __import__("auger.ui.widgets.comfy_ui", fromlist=["ComfyUIWidget"])
+                ).ComfyUIWidget
             )
         )
         
