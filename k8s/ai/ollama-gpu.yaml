@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: genny-shared
+  labels:
+    app: ollama
+spec:
+  selector:
+    app: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: genny-shared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        kubernetes.io/hostname: techno-vet-node1
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 11434
+          env:
+            - name: OLLAMA_KEEP_ALIVE
+              value: "-1"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      volumes:
+        - name: ollama-data
+          hostPath:
+            path: /opt/ollama-data
+            type: DirectoryOrCreate

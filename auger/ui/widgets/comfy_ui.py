@@ -116,7 +116,21 @@ class ComfyUIWidget(tk.Frame):
         tk.Button(hdr, text="Refresh", command=self._refresh_status, bg=BG3, fg=FG, relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT, padx=4)
         tk.Button(hdr, text="Queue Prompt", command=self._queue_generation, bg=ACC, fg="white", relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT, padx=4)
 
-        body = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.FLAT, bg=BG)
+        main_frame = tk.Frame(self, bg=BG)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        canvas = tk.Canvas(main_frame, bg=BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=canvas.yview)
+        content = tk.Frame(canvas, bg=BG)
+        content.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        canvas.create_window((0, 0), window=content, anchor=tk.NW)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._bind_mousewheel(canvas)
+
+        body = tk.PanedWindow(content, orient=tk.HORIZONTAL, sashrelief=tk.FLAT, bg=BG)
         body.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
 
         left = tk.Frame(body, bg=BG)
@@ -156,6 +170,19 @@ class ComfyUIWidget(tk.Frame):
         self._log = tk.Text(right, bg=BG2, fg=FG, font=MONO, relief=tk.FLAT, height=12, wrap=tk.WORD)
         self._log.pack(fill=tk.BOTH, expand=True)
         self._log.config(state=tk.DISABLED)
+
+    def _bind_mousewheel(self, canvas: tk.Canvas):
+        def _on_mousewheel(event):
+            delta = event.delta
+            if delta == 0 and getattr(event, "num", None) == 4:
+                delta = 120
+            elif delta == 0 and getattr(event, "num", None) == 5:
+                delta = -120
+            if delta:
+                canvas.yview_scroll(int(-delta / 120), "units")
+
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            canvas.bind_all(sequence, _on_mousewheel, add="+")
 
     def _labeled_text(self, parent, label: str, height: int, mono: bool = False):
         tk.Label(parent, text=label, bg=BG, fg=FG2, font=FONT).pack(anchor=tk.W, pady=(0, 2))

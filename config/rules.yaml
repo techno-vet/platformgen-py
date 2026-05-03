@@ -47,16 +47,28 @@ rules:
 
     '
   scope: global
+- enforcement: warn
+  id: tall-widgets-must-scroll
+  name: Tall widgets must provide vertical scrolling
+  rule: 'When creating or substantially redesigning a widget that can exceed the visible tab height (forms, dashboards,
+    split panes, long logs, configuration panels, image tools, etc.), include a vertical scrolling path from the start.
+    Do not assume the user can resize the window enough to reach lower controls. Prefer a scrollable outer content frame/canvas
+    so new controls remain reachable as the widget evolves.
+
+    '
+  scope: global
 - enforcement: error
   id: flux-prs-target-deploy-automation
   name: Widget scaffold must include all current required features
   rule: "When the user asks to create a new widget, the generated widget .py file MUST include ALL of the following (update\
     \ this list as new required features are added):\n  1. WIDGET_TITLE = \"Human Readable Name\"  (tab label)\n  2. WIDGET_ICON_FUNC\
     \ = staticmethod(make_icon)  (tab icon)\n  3. An entry in auger/data/widget_manifests.yaml with: title, purpose, depends_on,\n\
-    \     used_by, key_data_files, auger_rules, session_resume_hint\nWhen a new cross-cutting feature is added to the platform\
+    \     used_by, key_data_files, auger_rules, session_resume_hint\n  4. If the widget can grow beyond the visible tab height,\
+    \ build it with a vertical scrolling path from the start\nWhen a new cross-cutting feature is added to the platform\
     \ (e.g. WIDGET_AI_MANIFEST, a new lifecycle hook, a new required method), THIS rule must be updated to include that feature\
     \ so all future widgets automatically get it. Rule changelog:\n  2024-03: Added WIDGET_ICON_FUNC requirement\n  2025-03:\
-    \ Added WIDGET_AI_MANIFEST requirement (widget_manifests.yaml entry)\n"
+    \ Added WIDGET_AI_MANIFEST requirement (widget_manifests.yaml entry)\n  2026-05: Added vertical scrolling requirement for\
+    \ tall widgets\n"
   scope: widget_creation
 - enforcement: error
   id: create-widget-scaffold-includes-all-required-features
@@ -66,9 +78,11 @@ rules:
     \ = staticmethod(make_icon)  (tab icon)\n  3. An entry in auger/data/widget_manifests.yaml with: title, purpose, depends_on,\n\
     \     used_by, key_data_files, auger_rules, session_resume_hint\n  4. WIDGET_DEMO_DATA = {{...}}  — curated sample data\
     \ dict, returned by _load_data() when os.environ.get(\"AUGER_DEMO\") is set. Enables: AUGER_DEMO=1 auger start (full real\
-    \ UI, no credentials)\nWhen a new cross-cutting feature is added to the platform, THIS rule must be updated. Rule changelog:\n\
+    \ UI, no credentials)\n  5. If the widget can exceed the tab height, include a vertical scrolling layout so lower controls\
+    \ remain reachable\nWhen a new cross-cutting feature is added to the platform, THIS rule must be updated. Rule changelog:\n\
     \  2024-03: Added WIDGET_ICON_FUNC requirement\n  2025-03: Added WIDGET_AI_MANIFEST requirement (widget_manifests.yaml\
-    \ entry)\n  2025-06: Added WIDGET_DEMO_DATA requirement (offline/demo mode support)\n"
+    \ entry)\n  2025-06: Added WIDGET_DEMO_DATA requirement (offline/demo mode support)\n  2026-05: Added vertical scrolling\
+    \ requirement for tall widgets\n"
   scope: widget_creation
 - id: display-times-in-et
   name: All times must display in Eastern Time (ET/EST/EDT)

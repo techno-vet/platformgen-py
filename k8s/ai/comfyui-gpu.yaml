@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-run
+  namespace: genny-shared
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-basedir
+  namespace: genny-shared
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 120Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui
+  namespace: genny-shared
+  labels:
+    app: comfyui
+spec:
+  selector:
+    app: comfyui
+  ports:
+    - name: http
+      port: 8188
+      targetPort: 8188
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comfyui
+  namespace: genny-shared
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: comfyui
+  template:
+    metadata:
+      labels:
+        app: comfyui
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        kubernetes.io/hostname: techno-vet-node1
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: fix-volume-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - chown -R 1000:1000 /comfy/mnt /basedir
+          volumeMounts:
+            - name: comfyui-run
+              mountPath: /comfy/mnt
+            - name: comfyui-basedir
+              mountPath: /basedir
+      containers:
+        - name: comfyui
+          image: mmartial/comfyui-nvidia-docker:ubuntu22_cuda12.2-latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8188
+          env:
+            - name: USE_UV
+              value: "true"
+            - name: BASE_DIRECTORY
+              value: /basedir
+            - name: SECURITY_LEVEL
+              value: "normal"
+            - name: COMFY_CMDLINE_EXTRA
+              value: "--listen 0.0.0.0"
+            - name: WANTED_UID
+              value: "1000"
+            - name: WANTED_GID
+              value: "1000"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 12Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "6"
+              memory: 24Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: comfyui-run
+              mountPath: /comfy/mnt
+            - name: comfyui-basedir
+              mountPath: /basedir
+      volumes:
+        - name: comfyui-run
+          persistentVolumeClaim:
+            claimName: comfyui-run
+        - name: comfyui-basedir
+          persistentVolumeClaim:
+            claimName: comfyui-basedir
