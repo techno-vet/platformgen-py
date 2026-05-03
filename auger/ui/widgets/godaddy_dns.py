@@ -31,6 +31,7 @@ DNS_TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA"]
 
 class GoDaddyDNSWidget(tk.Frame):
     WIDGET_TITLE = "GoDaddy DNS"
+    WIDGET_ICON_NAME = "connect"
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, bg=BG, **kwargs)

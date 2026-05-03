@@ -39,6 +39,7 @@ def _list_models() -> list[str]:
 
 class AskGennyLocalWidget(tk.Frame):
     WIDGET_TITLE = "Ask Genny (Local LLM)"
+    WIDGET_ICON_NAME = "terminal"
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, bg=BG, **kwargs)
