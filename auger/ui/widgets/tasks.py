@@ -1,7 +1,7 @@
 """
 Tasks Widget — Local task tracker with SQLite CRUD.
 
-DB: ~/.auger/tasks.db
+DB: <state_dir>/tasks.db
 Fields: id, title, description, status, priority, category, created_at, updated_at
 """
 import tkinter as tk
@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from auger.runtime import state_dir
 
 try:
     from auger.ui.utils import add_treeview_menu, make_text_copyable, bind_mousewheel
@@ -77,7 +78,7 @@ _PRIORITY_COLORS = {
     'Low':    '#4ec9b0',
 }
 
-DB_PATH = Path.home() / '.auger' / 'tasks.db'
+DB_PATH = state_dir() / 'tasks.db'
 
 _SEED_TASKS = [
     {

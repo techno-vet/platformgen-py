@@ -31,7 +31,11 @@ import signal
 from pathlib import Path
 
 PORT = int(os.environ.get('AUGER_DAEMON_PORT', '7437'))
-AUGER_DIR = Path(os.environ.get('AUGER_HOME', str(Path.home() / '.auger'))).expanduser()
+AUGER_DIR = Path(
+    os.environ.get('AUGER_HOME')
+    or os.environ.get('PLATFORMGEN_HOME')
+    or str(Path.home() / '.auger')
+).expanduser()
 HOST_TOOLS_FILE = AUGER_DIR / 'host_tools.json'
 REPO_DIR = Path(__file__).parent.parent  # scripts/../ = repo root
 KEEPALIVE_STATE_FILE = AUGER_DIR / 'keepalive_state.json'
@@ -296,7 +300,7 @@ def _auto_detect():
     KNOWN = [
         ('vscode',               'VS Code',            ['/snap/bin/code', 'code'],                 'code'),
         ('chrome',               'Chrome',             ['/usr/bin/google-chrome', 'google-chrome'], ''),
-        ('terminal',             'Terminal',           ['/usr/bin/gnome-terminal', 'gnome-terminal', 'xterm'], ''),
+        ('terminal',             'Terminal',           ['/usr/bin/gnome-terminal', 'gnome-terminal', 'kgx', 'x-terminal-emulator', 'xterm'], ''),
         ('nautilus',             'Files (Nautilus)',   ['/usr/bin/nautilus', 'nautilus'],           ''),
         ('intellij-community',   'IntelliJ Community',['/snap/bin/intellij-idea-community'],       'intellij-idea-community'),
         ('intellij-ultimate',    'IntelliJ Ultimate', ['/snap/bin/intellij-idea-ultimate'],        'intellij-idea-ultimate'),
@@ -356,6 +360,14 @@ def handle_launch_tool(cmd: dict) -> dict:
     binary = tool.get('binary', '')
     args = tool.get('args_template', [])
     try:
+        if key == 'terminal':
+            # Terminal entries from .desktop files can point at distro-specific
+            # launchers; prefer a known-good host terminal when available.
+            terminal_bin = _find_bin('gnome-terminal', 'kgx', 'x-terminal-emulator', 'xterm', 'konsole', 'xfce4-terminal')
+            if terminal_bin:
+                subprocess.Popen([terminal_bin], start_new_session=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return {'status': 'ok'}
         if exec_cmd:
             subprocess.Popen(['bash', '-c', exec_cmd], start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -968,6 +980,7 @@ def stream_ask_copilot(cmd: dict, write_line):
     Serializes all requests so concurrent calls never corrupt events.jsonl.
     Streams output back as NDJSON and appends to ~/.auger/chat_history.jsonl."""
     import fcntl, time
+    import uuid
 
     prompt = cmd.get('prompt', '').strip()
     if not prompt:
@@ -992,48 +1005,77 @@ def stream_ask_copilot(cmd: dict, write_line):
         env['GH_TOKEN'] = token
         env['GITHUB_TOKEN'] = token
 
-    # Pinned session ID (Option 2)
     session_id_file = AUGER_DIR / '.session_id'
-    session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
-    # Health-check: detect corrupt pinned session and clear it so a fresh
-    # session is created instead of attempting to resume a broken session.
-    if session_id:
+    pinned_session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
+    selected_model = str(cmd.get('model') or 'auto').strip() or 'auto'
+    model_args = ['--model', selected_model] if selected_model.lower() != 'auto' else []
+
+    session_target = cmd.get('session_target', {})
+    if not isinstance(session_target, dict):
+        session_target = {}
+    session_mode = str(session_target.get('mode') or 'pinned').strip().lower()
+    requested_session_id = str(session_target.get('session_id') or '').strip()
+    requested_session_name = str(session_target.get('name') or '').strip()
+    name_args = ['--name', requested_session_name] if requested_session_name else []
+
+    def _session_is_corrupt(candidate_id: str) -> bool:
+        if not candidate_id:
+            return False
         try:
             import json as _json_health
-            events_path = Path.home() / '.copilot' / 'session-state' / session_id / 'events.jsonl'
-            if events_path.exists():
-                try:
-                    lines = events_path.read_text().splitlines()
-                    for raw_line in lines[-30:]:
-                        try:
-                            evt = _json_health.loads(raw_line)
-                            etype = evt.get('type', '')
-                            edata = evt.get('data', {}) or {}
-                            corrupt = (
-                                (etype == 'session.error' and
-                                 ('retried 5 times' in edata.get('message', '') or
-                                  'Failed to get response' in edata.get('message', '')))
-                                or
-                                (etype == 'session.compaction_complete' and
-                                 not edata.get('success', True))
-                            )
-                            if corrupt:
-                                try:
-                                    session_id_file.unlink(missing_ok=True)
-                                except Exception:
-                                    pass
-                                session_id = None
-                                write_line({'type': 'progress', 'message': '[WARN] Corrupt session detected — starting fresh session'})
-                                break
-                        except Exception:
-                            # ignore malformed lines
-                            pass
-                except Exception:
-                    pass
+
+            events_path = Path.home() / '.copilot' / 'session-state' / candidate_id / 'events.jsonl'
+            if not events_path.exists():
+                return False
+            try:
+                lines = events_path.read_text().splitlines()
+                for raw_line in lines[-30:]:
+                    try:
+                        evt = _json_health.loads(raw_line)
+                        etype = evt.get('type', '')
+                        edata = evt.get('data', {}) or {}
+                        corrupt = (
+                            (etype == 'session.error' and
+                             ('retried 5 times' in edata.get('message', '') or
+                              'Failed to get response' in edata.get('message', '')))
+                            or
+                            (etype == 'session.compaction_complete' and
+                             not edata.get('success', True))
+                        )
+                        if corrupt:
+                            return True
+                    except Exception:
+                        pass
+            except Exception:
+                return False
+        except Exception:
+            return False
+        return False
+
+    if session_mode == 'session' and requested_session_id:
+        session_id = requested_session_id
+        session_args = ['--resume', session_id]
+    elif session_mode == 'new':
+        session_id = requested_session_id or str(uuid.uuid4())
+        session_args = ['--resume', session_id]
+    else:
+        session_mode = 'pinned'
+        session_id = pinned_session_id
+        session_args = ['--resume', session_id] if session_id else ['--continue']
+
+    if session_mode == 'pinned' and session_id and _session_is_corrupt(session_id):
+        try:
+            session_id_file.unlink(missing_ok=True)
         except Exception:
             pass
-
-    session_args = ['--resume', session_id] if session_id else ['--continue']
+        session_id = None
+        session_args = ['--continue']
+        write_line({'type': 'progress', 'message': '[WARN] Corrupt pinned session detected — starting fresh session'})
+    elif session_mode == 'session' and session_id and _session_is_corrupt(session_id):
+        session_mode = 'new'
+        session_id = str(uuid.uuid4())
+        session_args = ['--resume', session_id]
+        write_line({'type': 'progress', 'message': '[WARN] Selected session is unhealthy — switching this request to a fresh session'})
 
     copilot_bin = _find_bin('copilot')
     if not copilot_bin:
@@ -1090,7 +1132,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                 """Run copilot subprocess and return (response_lines, returncode)."""
                 lines_out = []
                 p = subprocess.Popen(
-                    [copilot_bin, '-p', enriched, '--allow-all'] + s_args,
+                    [copilot_bin] + model_args + name_args + ['-p', enriched, '--allow-all'] + s_args,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, env=env
                 )
@@ -1129,21 +1171,37 @@ def stream_ask_copilot(cmd: dict, write_line):
 
             # Auto-detect CAPIError / 400 Bad Request in output — corrupt session.
             # Clear the pinned session and retry once with a fresh --continue session.
-            _caperror_markers = ('capierror', '400 bad request', '400 bad_request',
-                                 'bad request', 'failed to get response')
+            _caperror_markers = (
+                'capierror',
+                '400 bad request',
+                '400 bad_request',
+                'bad request',
+                'failed to get response',
+                'tool_use ids were found without tool_result',
+                'each tool_use block must have a corresponding tool_result block',
+                'invalid_request_error',
+            )
             _output_lower = ' '.join(response_lines).lower()
             if rc != 0 or any(m in _output_lower for m in _caperror_markers):
-                try:
-                    session_id_file.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                write_line({'type': 'progress',
-                            'message': '[WARN] Session error detected — clearing session and retrying with fresh session…'})
-                response_lines, rc = _run_copilot(['--continue'], _enriched_prompt)
-                session_id = None  # mark so we pin the new session below
+                if session_mode == 'pinned':
+                    try:
+                        session_id_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    write_line({'type': 'progress',
+                                'message': '[WARN] Session error detected — clearing pinned session and retrying with fresh session…'})
+                    response_lines, rc = _run_copilot(['--continue'], _enriched_prompt)
+                    session_id = None
+                else:
+                    session_mode = 'new'
+                    session_id = str(uuid.uuid4())
+                    write_line({'type': 'progress',
+                                'message': '[WARN] Session error detected — retrying with a fresh non-pinned session…'})
+                    response_lines, rc = _run_copilot(['--resume', session_id], _enriched_prompt)
 
             # Pin session ID after every successful call so next invocation uses
             # --resume instead of --continue (preserves full conversation context).
+            actual_session_id = session_id
             if rc == 0:
                 try:
                     session_state_dir = Path.home() / '.copilot' / 'session-state'
@@ -1154,7 +1212,9 @@ def stream_ask_copilot(cmd: dict, write_line):
                             reverse=True,
                         )
                         if dirs:
-                            session_id_file.write_text(dirs[0].name)
+                            actual_session_id = dirs[0].name
+                            if session_mode == 'pinned':
+                                session_id_file.write_text(dirs[0].name)
                 except Exception:
                     pass
 
@@ -1171,7 +1231,13 @@ def stream_ask_copilot(cmd: dict, write_line):
                 }) + '\n')
 
             if rc == 0:
-                write_line({'type': 'done', 'status': 'ok'})
+                write_line({
+                    'type': 'done',
+                    'status': 'ok',
+                    'session_id': actual_session_id,
+                    'session_mode': session_mode,
+                    'model': selected_model,
+                })
             else:
                 write_line({'type': 'error',
                             'message': f'copilot exited with code {rc}'})

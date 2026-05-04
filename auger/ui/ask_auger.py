@@ -1,7 +1,7 @@
 """Assistant panel - AI agent interface running the configured CLI."""
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import subprocess
 import threading
 import queue
@@ -22,6 +22,28 @@ try:
     _GIT_WORKFLOW_AVAILABLE = True
 except ImportError:
     _GIT_WORKFLOW_AVAILABLE = False
+
+
+COPILOT_MODEL_OPTIONS = (
+    "auto",
+    "claude-sonnet-4.6",
+    "claude-sonnet-4.5",
+    "claude-haiku-4.5",
+    "claude-opus-4.7",
+    "claude-opus-4.6",
+    "claude-opus-4.6-fast",
+    "claude-opus-4.5",
+    "claude-sonnet-4",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.3-codex",
+    "gpt-5.2-codex",
+    "gpt-5.2",
+    "gpt-5.1",
+    "gpt-5.4-mini",
+    "gpt-5-mini",
+    "gpt-4.1",
+)
 
 
 class AskAugerPanel(tk.Frame):
@@ -48,6 +70,13 @@ class AskAugerPanel(tk.Frame):
         self._auto_save_id = None
         self._live_response_chunks = []
         self._live_response_prompt = ""
+        self._panel_state_file = state_dir() / "ask_genny_panel.json"
+        self._model_var = tk.StringVar(value="auto")
+        self._session_var = tk.StringVar(value="Pinned Session")
+        self._selected_session_target = {'mode': 'pinned'}
+        self._session_aliases = {}
+        self._session_targets_by_label = {}
+        self._load_panel_state()
 
         # Shared chat history watcher (cross-source: terminal, host, container)
         self._chat_history_file = state_dir() / "chat_history.jsonl"
@@ -81,6 +110,307 @@ class AskAugerPanel(tk.Frame):
             if candidate and Path(candidate).exists():
                 return str(Path(candidate))
         return str(Path.home() / f".local/bin/{cli}")
+
+    def _load_panel_state(self):
+        data = {}
+        if self._panel_state_file.exists():
+            try:
+                data = json.loads(self._panel_state_file.read_text(encoding='utf-8'))
+            except Exception:
+                data = {}
+
+        model = str(data.get('selected_model') or 'auto').strip() or 'auto'
+        if model not in COPILOT_MODEL_OPTIONS:
+            model = 'auto'
+        self._model_var.set(model)
+
+        aliases = data.get('session_aliases', {})
+        if isinstance(aliases, dict):
+            self._session_aliases = {
+                str(session_id): str(alias).strip()
+                for session_id, alias in aliases.items()
+                if str(alias).strip()
+            }
+        else:
+            self._session_aliases = {}
+
+        session_target = data.get('session_target', {})
+        if not isinstance(session_target, dict):
+            session_target = {}
+        mode = str(session_target.get('mode') or 'pinned').strip().lower()
+        if mode == 'session' and str(session_target.get('session_id') or '').strip():
+            self._selected_session_target = {
+                'mode': 'session',
+                'session_id': str(session_target.get('session_id')).strip(),
+            }
+        elif mode == 'new':
+            self._selected_session_target = {
+                'mode': 'new',
+                'name': self._clean_session_name(session_target.get('name', '')),
+            }
+        else:
+            self._selected_session_target = {'mode': 'pinned'}
+
+    def _save_panel_state(self):
+        payload = {
+            'selected_model': self._effective_model(),
+            'session_target': dict(self._selected_session_target),
+            'session_aliases': dict(sorted(self._session_aliases.items())),
+        }
+        try:
+            self._panel_state_file.parent.mkdir(parents=True, exist_ok=True)
+            self._panel_state_file.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+        except Exception:
+            pass
+
+    def _effective_model(self) -> str:
+        model = str(self._model_var.get() or 'auto').strip() or 'auto'
+        return model if model in COPILOT_MODEL_OPTIONS else 'auto'
+
+    def _copilot_session_state_dir(self) -> Path:
+        return Path.home() / '.copilot' / 'session-state'
+
+    def _read_pinned_session_id(self) -> str:
+        session_id_file = state_dir() / '.session_id'
+        if not session_id_file.exists():
+            return ''
+        try:
+            return session_id_file.read_text(encoding='utf-8').strip()
+        except Exception:
+            return ''
+
+    def _clean_session_name(self, name: str) -> str:
+        return ' '.join(str(name or '').strip().split())
+
+    def _session_timestamp_label(self, timestamp: float | None) -> str:
+        if not timestamp:
+            return ''
+        try:
+            return datetime.fromtimestamp(timestamp).strftime('%m/%d %H:%M')
+        except Exception:
+            return ''
+
+    def _list_copilot_sessions(self, limit: int = 30) -> list[dict]:
+        session_root = self._copilot_session_state_dir()
+        if not session_root.exists():
+            return []
+        entries = []
+        try:
+            dirs = sorted(
+                (entry for entry in session_root.iterdir() if entry.is_dir()),
+                key=lambda entry: entry.stat().st_mtime,
+                reverse=True,
+            )
+        except Exception:
+            return []
+
+        for entry in dirs[:limit]:
+            try:
+                stat = entry.stat()
+                entries.append(
+                    {
+                        'id': entry.name,
+                        'updated_at': stat.st_mtime,
+                        'updated_label': self._session_timestamp_label(stat.st_mtime),
+                        'alias': self._session_aliases.get(entry.name, '').strip(),
+                    }
+                )
+            except Exception:
+                continue
+        return entries
+
+    def _session_display_label(self, session_id: str, alias: str = '', updated_label: str = '', pinned: bool = False) -> str:
+        base = alias or ('Pinned Session' if pinned else f'Session {session_id[:8]}')
+        parts = [base]
+        if not pinned:
+            parts.append(session_id[:8])
+        if updated_label:
+            parts.append(updated_label)
+        return ' - '.join(parts)
+
+    def _session_target_matches(self, target: dict, expected: dict) -> bool:
+        if target.get('mode') != expected.get('mode'):
+            return False
+        if target.get('mode') == 'session':
+            return str(target.get('session_id') or '') == str(expected.get('session_id') or '')
+        if target.get('mode') == 'new':
+            return self._clean_session_name(target.get('name', '')) == self._clean_session_name(expected.get('name', ''))
+        return True
+
+    def _set_session_target(self, target: dict, refresh: bool = True):
+        mode = str(target.get('mode') or 'pinned').strip().lower()
+        if mode == 'session' and str(target.get('session_id') or '').strip():
+            self._selected_session_target = {
+                'mode': 'session',
+                'session_id': str(target.get('session_id')).strip(),
+            }
+        elif mode == 'new':
+            self._selected_session_target = {
+                'mode': 'new',
+                'name': self._clean_session_name(target.get('name', '')),
+            }
+        else:
+            self._selected_session_target = {'mode': 'pinned'}
+        self._save_panel_state()
+        if refresh and hasattr(self, '_session_combo'):
+            self._refresh_session_selector()
+
+    def _refresh_model_selector(self):
+        self._model_combo['values'] = COPILOT_MODEL_OPTIONS
+        self._model_var.set(self._effective_model())
+
+    def _refresh_session_selector(self):
+        pinned_session_id = self._read_pinned_session_id()
+        values = []
+        mapping = {}
+
+        pinned_alias = self._session_aliases.get(pinned_session_id, '').strip() if pinned_session_id else ''
+        pinned_label = self._session_display_label(
+            pinned_session_id or 'pinned',
+            alias=pinned_alias,
+            updated_label='',
+            pinned=True,
+        )
+        values.append(pinned_label)
+        mapping[pinned_label] = {'mode': 'pinned'}
+
+        if self._selected_session_target.get('mode') == 'new':
+            new_name = self._clean_session_name(self._selected_session_target.get('name', ''))
+            new_label = f"New Session - {new_name or 'unnamed'}"
+            values.append(new_label)
+            mapping[new_label] = dict(self._selected_session_target)
+
+        for entry in self._list_copilot_sessions():
+            if entry['id'] == pinned_session_id:
+                continue
+            label = self._session_display_label(
+                entry['id'],
+                alias=entry.get('alias', ''),
+                updated_label=entry.get('updated_label', ''),
+            )
+            if label in mapping:
+                label = f"{label} ({entry['id'][:8]})"
+            values.append(label)
+            mapping[label] = {'mode': 'session', 'session_id': entry['id']}
+
+        self._session_targets_by_label = mapping
+        self._session_combo['values'] = values
+
+        selected_label = None
+        for label, target in mapping.items():
+            if self._session_target_matches(target, self._selected_session_target):
+                selected_label = label
+                break
+        if selected_label is None:
+            self._set_session_target({'mode': 'pinned'}, refresh=False)
+            selected_label = pinned_label
+        self._session_var.set(selected_label)
+
+        rename_state = tk.NORMAL if (
+            self._selected_session_target.get('mode') == 'new'
+            or self._selected_session_target.get('mode') == 'session'
+            or bool(pinned_session_id)
+        ) else tk.DISABLED
+        self._rename_session_btn.config(state=rename_state)
+
+    def _selected_session_id(self) -> str:
+        mode = self._selected_session_target.get('mode')
+        if mode == 'session':
+            return str(self._selected_session_target.get('session_id') or '').strip()
+        if mode == 'pinned':
+            return self._read_pinned_session_id()
+        return ''
+
+    def _on_model_selected(self, _event=None):
+        self._model_var.set(self._effective_model())
+        self._save_panel_state()
+
+    def _on_session_selected(self, _event=None):
+        target = self._session_targets_by_label.get(self._session_var.get())
+        if target:
+            self._set_session_target(target, refresh=False)
+
+    def _new_session(self):
+        suggested = datetime.now().strftime('Session %m/%d %H:%M')
+        name = simpledialog.askstring(
+            'New Copilot Session',
+            'Optional session name for the next Ask Genny conversation:',
+            parent=self,
+            initialvalue=suggested,
+        )
+        if name is None:
+            return
+        self._set_session_target({'mode': 'new', 'name': name})
+
+    def _rename_session(self):
+        mode = self._selected_session_target.get('mode')
+        if mode == 'new':
+            initial = self._clean_session_name(self._selected_session_target.get('name', ''))
+            renamed = simpledialog.askstring(
+                'Rename Pending Session',
+                'Name for the next new Copilot session:',
+                parent=self,
+                initialvalue=initial,
+            )
+            if renamed is None:
+                return
+            self._set_session_target({'mode': 'new', 'name': renamed})
+            return
+
+        session_id = self._selected_session_id()
+        if not session_id:
+            messagebox.showinfo(
+                'No Session Available',
+                'There is no Copilot session to rename yet. Send a prompt first or choose an existing session.',
+                parent=self,
+            )
+            return
+
+        current_name = self._session_aliases.get(session_id, '')
+        renamed = simpledialog.askstring(
+            'Rename Copilot Session',
+            'Friendly name for this Copilot session:',
+            parent=self,
+            initialvalue=current_name,
+        )
+        if renamed is None:
+            return
+        cleaned = self._clean_session_name(renamed)
+        if cleaned:
+            self._session_aliases[session_id] = cleaned
+        else:
+            self._session_aliases.pop(session_id, None)
+        self._save_panel_state()
+        self._refresh_session_selector()
+
+    def _apply_session_result(self, metadata: dict | None):
+        if not metadata:
+            return
+
+        actual_session_id = str(metadata.get('session_id') or '').strip()
+        mode = self._selected_session_target.get('mode')
+
+        if mode == 'new' and actual_session_id:
+            planned_name = self._clean_session_name(self._selected_session_target.get('name', ''))
+            if planned_name and actual_session_id not in self._session_aliases:
+                self._session_aliases[actual_session_id] = planned_name
+            self._selected_session_target = {'mode': 'session', 'session_id': actual_session_id}
+        elif mode == 'session' and actual_session_id:
+            self._selected_session_target = {'mode': 'session', 'session_id': actual_session_id}
+        else:
+            self._selected_session_target = {'mode': 'pinned'}
+
+        self._save_panel_state()
+        self._refresh_session_selector()
+
+    def _post_local_session_result(self):
+        target_mode = self._selected_session_target.get('mode')
+        if target_mode == 'new':
+            sessions = self._list_copilot_sessions(limit=1)
+            session_id = sessions[0]['id'] if sessions else ''
+        else:
+            session_id = self._selected_session_id()
+        self._apply_session_result({'session_id': session_id, 'model': self._effective_model()})
     
     def _build_ui(self):
         """Build the panel UI."""
@@ -96,6 +426,72 @@ class AskAugerPanel(tk.Frame):
             fg='white',
             bg='#007acc'
         ).pack(side=tk.LEFT, padx=10)
+
+        tk.Label(
+            header,
+            text="Model",
+            font=('Segoe UI', 9),
+            fg='white',
+            bg='#007acc'
+        ).pack(side=tk.LEFT, padx=(4, 4))
+
+        self._model_combo = ttk.Combobox(
+            header,
+            textvariable=self._model_var,
+            state='readonly',
+            width=18,
+        )
+        self._model_combo.pack(side=tk.LEFT, padx=(0, 8), pady=2)
+        self._model_combo.bind('<<ComboboxSelected>>', self._on_model_selected)
+
+        tk.Label(
+            header,
+            text="Session",
+            font=('Segoe UI', 9),
+            fg='white',
+            bg='#007acc'
+        ).pack(side=tk.LEFT, padx=(0, 4))
+
+        self._session_combo = ttk.Combobox(
+            header,
+            textvariable=self._session_var,
+            state='readonly',
+            width=28,
+        )
+        self._session_combo.pack(side=tk.LEFT, padx=(0, 4), pady=2)
+        self._session_combo.bind('<<ComboboxSelected>>', self._on_session_selected)
+
+        self._new_session_btn = tk.Button(
+            header,
+            text="+",
+            command=self._new_session,
+            bg='#007acc',
+            fg='white',
+            font=('Segoe UI', 9, 'bold'),
+            relief=tk.FLAT,
+            cursor='hand2',
+            activebackground='#005a9e',
+            activeforeground='white',
+            padx=6,
+            pady=0,
+        )
+        self._new_session_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        self._rename_session_btn = tk.Button(
+            header,
+            text="Rename",
+            command=self._rename_session,
+            bg='#007acc',
+            fg='white',
+            font=('Segoe UI', 9),
+            relief=tk.FLAT,
+            cursor='hand2',
+            activebackground='#005a9e',
+            activeforeground='white',
+            padx=6,
+            pady=0,
+        )
+        self._rename_session_btn.pack(side=tk.LEFT, padx=(0, 8))
         
         self.status_label = tk.Label(
             header,
@@ -253,6 +649,8 @@ class AskAugerPanel(tk.Frame):
         self.response = MarkdownWidget(response_frame, yscrollcommand=scrollbar.set)
         self.response.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.response.yview)
+        self._refresh_model_selector()
+        self._refresh_session_selector()
     
     def _popout(self):
         """Pop Ask Auger out into its own floating window."""
@@ -440,6 +838,18 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         # Tell cli.py this subprocess was spawned by the panel — so it tags
         # chat_history entries as 'panel' and the watcher skips them (no duplicate).
         env['AUGER_CHAT_SOURCE'] = 'panel'
+        env['AUGER_COPILOT_MODEL'] = self._effective_model()
+        env['AUGER_COPILOT_SESSION_MODE'] = str(self._selected_session_target.get('mode') or 'pinned')
+        env.pop('AUGER_COPILOT_SESSION_ID', None)
+        env.pop('AUGER_COPILOT_SESSION_NAME', None)
+        if self._selected_session_target.get('mode') == 'session':
+            session_id = str(self._selected_session_target.get('session_id') or '').strip()
+            if session_id:
+                env['AUGER_COPILOT_SESSION_ID'] = session_id
+        elif self._selected_session_target.get('mode') == 'new':
+            session_name = self._clean_session_name(self._selected_session_target.get('name', ''))
+            if session_name:
+                env['AUGER_COPILOT_SESSION_NAME'] = session_name
         return env
 
     def _run_via_ask_daemon(self, prompt: str):
@@ -455,7 +865,12 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         try:
             req = urllib.request.Request(
                 daemon_endpoint,
-                data=_json.dumps({'prompt': prompt, 'source': 'container'}).encode(),
+                data=_json.dumps({
+                    'prompt': prompt,
+                    'source': 'container',
+                    'model': self._effective_model(),
+                    'session_target': dict(self._selected_session_target),
+                }).encode(),
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
@@ -477,6 +892,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                         elif msg_type == 'progress':
                             pass  # suppress internal progress messages from panel
                         elif msg_type == 'done':
+                            self._queue.put(('session_meta', entry))
                             full = '\n'.join(response_lines)
                             self._save_to_history('assistant', full)
                             self._check_for_widget_code(full)
@@ -491,7 +907,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         except urllib.error.URLError:
             # Daemon not reachable — fall back to local auger CLI
             augmented_prompt = self._behavior_preamble() + prompt
-            self._run_auger(augmented_prompt)
+            self._run_auger(augmented_prompt, on_complete=self._post_local_session_result)
             return
         except Exception as e:
             self._queue.put(('error', str(e)))
@@ -592,6 +1008,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                     self._clear_pending_response()
                     if data:  # on_complete callback
                         data()
+
+                elif msg_type == 'session_meta':
+                    self._apply_session_result(data)
                 
                 elif msg_type == 'widget':
                     code, widget_name = data if isinstance(data, tuple) else (data, 'new_widget')
@@ -1324,6 +1743,10 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
     def _set_processing(self):
         """Disable send button, start pulsating dot, hide unlock button."""
         self.ask_btn.config(state=tk.DISABLED)
+        self._model_combo.config(state='disabled')
+        self._session_combo.config(state='disabled')
+        self._new_session_btn.config(state=tk.DISABLED)
+        self._rename_session_btn.config(state=tk.DISABLED)
         self._is_processing = True
         try:
             self._unlock_btn.pack_forget()
@@ -1335,6 +1758,11 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         """Re-enable send button and stop pulsating dot.
         If check_lock=True, verify daemon lock is cleared — go red if stuck."""
         self.ask_btn.config(state=tk.NORMAL)
+        self._model_combo.config(state='readonly')
+        self._session_combo.config(state='readonly')
+        self._new_session_btn.config(state=tk.NORMAL)
+        self._rename_session_btn.config(state=tk.NORMAL)
+        self._refresh_session_selector()
         self._is_processing = False
         if check_lock:
             def _verify():

@@ -236,51 +236,81 @@ def run_copilot_ask(prompt_text=None):
             lock_path.chmod(0o666)
         except Exception:
             pass
-        # Use pinned session ID if available, otherwise fall back to --continue
         session_id_file = state_dir() / '.session_id'
-        session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
+        pinned_session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
+        selected_model = (env.get('AUGER_COPILOT_MODEL') or 'auto').strip() or 'auto'
+        model_args = ['--model', selected_model] if selected_model.lower() != 'auto' else []
+        requested_mode = (env.get('AUGER_COPILOT_SESSION_MODE') or 'pinned').strip().lower()
+        requested_session_id = (env.get('AUGER_COPILOT_SESSION_ID') or '').strip()
+        requested_session_name = (env.get('AUGER_COPILOT_SESSION_NAME') or '').strip()
+        name_args = ['--name', requested_session_name] if requested_session_name else []
 
-        # Option 3: Health check — detect corrupt session before invoking copilot.
-        # If the pinned session's events.jsonl shows recent error events, clear
-        # the pin so a fresh session is started via --continue instead.
-        if session_id:
-            events_path = (Path.home() / '.copilot' / 'session-state'
-                           / session_id / 'events.jsonl')
+        def _session_is_corrupt(candidate_id: str) -> bool:
+            if not candidate_id:
+                return False
+            events_path = Path.home() / '.copilot' / 'session-state' / candidate_id / 'events.jsonl'
             try:
                 _events_exist = events_path.exists()
             except PermissionError:
-                _events_exist = True  # file exists, just not readable — safe to --resume
-            if _events_exist:
-                try:
-                    lines = events_path.read_text().splitlines()
-                    for raw_line in lines[-30:]:
-                        try:
-                            evt = _json_health.loads(raw_line)
-                            etype = evt.get('type', '')
-                            edata = evt.get('data', {})
-                            corrupt = (
-                                (etype == 'session.error' and
-                                 ('retried 5 times' in edata.get('message', '') or
-                                  'Failed to get response' in edata.get('message', '')))
-                                or
-                                (etype == 'session.compaction_complete' and
-                                 not edata.get('success', True))
-                            )
-                            if corrupt:
-                                session_id_file.unlink(missing_ok=True)
-                                session_id = None
-                                print(
-                                    '[33m⚠️  Corrupt session detected — '
-                                    'starting fresh session[0m',
-                                    flush=True
-                                )
-                                break
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+                _events_exist = True
+            if not _events_exist:
+                return False
+            try:
+                lines = events_path.read_text().splitlines()
+                for raw_line in lines[-30:]:
+                    try:
+                        evt = _json_health.loads(raw_line)
+                        etype = evt.get('type', '')
+                        edata = evt.get('data', {})
+                        corrupt = (
+                            (etype == 'session.error' and
+                             ('retried 5 times' in edata.get('message', '') or
+                              'Failed to get response' in edata.get('message', '')))
+                            or
+                            (etype == 'session.compaction_complete' and
+                             not edata.get('success', True))
+                        )
+                        if corrupt:
+                            return True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return False
 
-        session_args = ["--resume", session_id] if session_id else ["--continue"]
+        if requested_mode == 'session' and requested_session_id:
+            session_id = requested_session_id
+            session_mode = 'session'
+            session_args = ['--resume', session_id]
+        elif requested_mode == 'new':
+            import uuid as _uuid
+
+            session_id = str(_uuid.uuid4())
+            session_mode = 'new'
+            session_args = ['--resume', session_id]
+        else:
+            session_id = pinned_session_id
+            session_mode = 'pinned'
+            session_args = ['--resume', session_id] if session_id else ['--continue']
+
+        if session_mode == 'pinned' and session_id and _session_is_corrupt(session_id):
+            session_id_file.unlink(missing_ok=True)
+            session_id = None
+            session_args = ['--continue']
+            print(
+                '[33m⚠️  Corrupt pinned session detected — starting fresh session[0m',
+                flush=True
+            )
+        elif session_mode == 'session' and session_id and _session_is_corrupt(session_id):
+            import uuid as _uuid
+
+            session_id = str(_uuid.uuid4())
+            session_mode = 'new'
+            session_args = ['--resume', session_id]
+            print(
+                '[33m⚠️  Selected session is unhealthy — switching this request to a fresh session[0m',
+                flush=True
+            )
 
         # Record prompt in shared chat history.
         # Source priority: AUGER_CHAT_SOURCE env var (set by panel subprocess) >
@@ -322,7 +352,7 @@ def run_copilot_ask(prompt_text=None):
                 try:
                     # Stream output to terminal AND capture for chat_history.jsonl
                     proc = subprocess.Popen(
-                        ["copilot", "-p", _enriched_prompt, "--allow-all"] + session_args,
+                        ["copilot"] + model_args + name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         env=env
                     )
@@ -344,48 +374,118 @@ def run_copilot_ask(prompt_text=None):
 
                     response_lines = []
                     _stream_proc(proc, response_lines)
+                    _final_rc = proc.returncode
 
-                    # ── CAPIError 400 auto-recovery ──────────────────────────
-                    # CAPIError 400 means the Copilot OAuth cache (hosts.json) has
-                    # expired — NOT the GH_TOKEN PAT (valid until 2027) and NOT
-                    # the pinned runtime .session_id (keep it — it holds context).
-                    # Recovery: delete ~/.config/github-copilot/hosts.json so the
-                    # copilot CLI re-authenticates using the ambient GH_TOKEN, then
-                    # retry the original call with the same session_args (preserving
-                    # the pinned session ID).
+                    # ── CAPIError/session auto-recovery ──────────────────────
+                    # There are two common failure modes:
+                    # 1) OAuth cache/auth drift (hosts.json) -> retry same session.
+                    # 2) Corrupt pinned transcript (tool_use without tool_result)
+                    #    -> clear pin once, retry with fresh --continue, then repin.
                     _full_out = ''.join(response_lines)
-                    if _re.search(r'CAPIError.*400|400.*Bad Request', _full_out):
-                        _hosts_json = Path.home() / '.config' / 'github-copilot' / 'hosts.json'
-                        _cleared = False
-                        try:
-                            if _hosts_json.exists():
-                                _hosts_json.unlink()
-                                _cleared = True
-                        except Exception:
-                            pass
-                        print(
-                            '\n⚠️  CAPIError 400 — Copilot OAuth cache expired. '
-                            + ('Cleared hosts.json and retrying (session pin preserved)…'
-                               if _cleared else 'Retrying without hosts.json reset…'),
-                            flush=True
-                        )
+                    _lower_out = _full_out.lower()
+
+                    _has_400 = bool(_re.search(r'CAPIError.*400|400.*Bad Request', _full_out, _re.IGNORECASE))
+                    _session_protocol_markers = (
+                        'tool_use ids were found without tool_result',
+                        'each tool_use block must have a corresponding tool_result block',
+                        'invalid_request_error',
+                    )
+                    _is_protocol_corruption = any(m in _lower_out for m in _session_protocol_markers)
+                    _generic_error_markers = (
+                        'failed to get response',
+                        '400 bad request',
+                        '400 bad_request',
+                    )
+                    _should_recover = _has_400 or any(m in _lower_out for m in _generic_error_markers)
+
+                    if _should_recover:
+                        if _is_protocol_corruption and session_mode == 'pinned' and session_id:
+                            # Keep a forensic copy of the bad pin and start fresh once.
+                            try:
+                                import time as _time_recover
+                                bad_pin = session_id_file.with_name(f'.session_id.bad-{int(_time_recover.time())}')
+                                session_id_file.rename(bad_pin)
+                            except Exception:
+                                try:
+                                    session_id_file.unlink(missing_ok=True)
+                                except Exception:
+                                    pass
+                            session_id = None
+                            session_args = ["--continue"]
+                            print(
+                                '\n⚠️  Copilot session transcript mismatch detected '
+                                '(tool_use/tool_result sequence error).\n'
+                                '    Cleared pinned session and retrying once with a fresh session; '
+                                'context is preserved via snapshot preamble.',
+                                flush=True
+                            )
+                        elif session_mode in ('session', 'new'):
+                            import uuid as _uuid
+
+                            session_id = str(_uuid.uuid4())
+                            session_mode = 'new'
+                            session_args = ['--resume', session_id]
+                            print(
+                                '\n⚠️  Ask Genny session error detected — retrying once with a fresh non-pinned session.',
+                                flush=True
+                            )
+                        elif _has_400:
+                            _hosts_json = Path.home() / '.config' / 'github-copilot' / 'hosts.json'
+                            _cleared = False
+                            try:
+                                if _hosts_json.exists():
+                                    _hosts_json.unlink()
+                                    _cleared = True
+                            except Exception:
+                                pass
+                            print(
+                                '\n⚠️  CAPIError 400 — retrying Copilot call. '
+                                + ('Cleared hosts.json first.' if _cleared else 'hosts.json not changed.'),
+                                flush=True
+                            )
+
                         response_lines = []
                         proc2 = subprocess.Popen(
-                            ["copilot", "-p", _enriched_prompt, "--allow-all"] + session_args,
+                            ["copilot"] + model_args + name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             env=env
                         )
                         _stream_proc(proc2, response_lines)
+                        _final_rc = proc2.returncode
                         _full_out = ''.join(response_lines)
-                        if _re.search(r'CAPIError.*400|400.*Bad Request', _full_out):
-                            # Still failing — needs interactive device-code re-auth
+                        _lower_out = _full_out.lower()
+
+                        if _re.search(r'CAPIError.*400|400.*Bad Request', _full_out, _re.IGNORECASE):
                             print(
                                 '\n❌  Copilot still failing after auto-retry.\n'
                                 '    Run this once in a terminal, then retry your prompt:\n'
                                 '      copilot auth login\n'
-                                f'    Your session pin ({state_dir() / ".session_id"}) is preserved.',
+                                f'    Session pin file: {state_dir() / ".session_id"}',
                                 flush=True
                             )
+                        elif any(m in _lower_out for m in _session_protocol_markers):
+                            print(
+                                '\n❌  Copilot session is still returning tool protocol errors after retry.\n'
+                                '    Use the recovery helper to rebuild a clean session:\n'
+                                '      python3 scripts/recover_copilot_session.py',
+                                flush=True
+                            )
+
+                    # Pin latest session after each successful response only when
+                    # Ask Genny is using the pinned-session path.
+                    if _final_rc == 0:
+                        try:
+                            session_state_dir = Path.home() / '.copilot' / 'session-state'
+                            if session_state_dir.exists():
+                                dirs = sorted(
+                                    (e for e in session_state_dir.iterdir() if e.is_dir()),
+                                    key=lambda p: p.stat().st_mtime,
+                                    reverse=True,
+                                )
+                                if dirs and session_mode == 'pinned':
+                                    session_id_file.write_text(dirs[0].name)
+                        except Exception:
+                            pass
                     # ── end auto-recovery ────────────────────────────────────
 
                     # Layer 1: write session snapshot for context recovery

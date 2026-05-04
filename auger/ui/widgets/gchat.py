@@ -1130,7 +1130,9 @@ class GChatWidget(tk.Frame):
     def _fill_task(self):
         try:
             import sqlite3
-            conn = sqlite3.connect(str(_auger_home() / '.auger' / 'tasks.db'))
+            from auger.runtime import state_dir
+
+            conn = sqlite3.connect(str(state_dir() / 'tasks.db'))
             row  = conn.execute("SELECT id,title,status FROM tasks WHERE status='in_progress' "
                                 "ORDER BY updated_at DESC LIMIT 1").fetchone()
             conn.close()
