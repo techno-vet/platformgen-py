@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export AUGER_HOME="${AUGER_HOME:-$HOME/.platformgen}"
-export AUGER_DAEMON_PORT="${AUGER_DAEMON_PORT:-7537}"
+export AUGER_DAEMON_PORT="7437"
 export AUGER_APP_NAME="${AUGER_APP_NAME:-PlatformGen}"
 export AUGER_PRODUCT_NAME="${AUGER_PRODUCT_NAME:-PlatformGen}"
 export AUGER_ASSISTANT_NAME="${AUGER_ASSISTANT_NAME:-Genny}"

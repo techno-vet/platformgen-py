@@ -166,11 +166,11 @@ class AugerStatusBar(tk.Frame):
         )
         self._lbl_daemon.pack(side=tk.RIGHT)
 
+        self._q: queue.Queue = queue.Queue()
         threading.Thread(target=self._worker_git,        daemon=True).start()
         threading.Thread(target=self._worker_git_remote, daemon=True).start()
         threading.Thread(target=self._worker_daemon,     daemon=True).start()
         self._tick_clock()
-        self._q: queue.Queue = queue.Queue()
         self._poll_q()
 
     def _poll_q(self):

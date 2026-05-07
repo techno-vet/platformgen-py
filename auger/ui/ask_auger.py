@@ -9,6 +9,7 @@ import shutil
 import re
 import json
 import os
+import signal
 from pathlib import Path
 import sys
 from datetime import datetime, timedelta
@@ -47,8 +48,8 @@ COPILOT_MODEL_OPTIONS = (
 
 ASK_HEADER_BG = '#24292f'
 ASK_HEADER_BG_ACTIVE = '#2f363d'
-ASK_HEADER_ACCENT = '#2ea043'
-ASK_HEADER_ACCENT_ACTIVE = '#3fb950'
+ASK_HEADER_ACCENT = '#22b8b2'
+ASK_HEADER_ACCENT_ACTIVE = '#45d6d0'
 ASK_HEADER_TEXT = '#f0f6fc'
 ASK_HEADER_TEXT_MUTED = '#c9d1d9'
 ASK_HEADER_TEXT_DIM = '#8b949e'
@@ -67,6 +68,9 @@ class AskAugerPanel(tk.Frame):
         self.content_area = content_area
         self._queue = queue.Queue()
         self._process = None
+        self._active_request_mode = None
+        self._cancel_supported = False
+        self._cancel_requested = False
         self._last_prompt = ''  # original user prompt, stored for post-response footer
         
         self._auger = self._resolve_cli_path()
@@ -77,8 +81,11 @@ class AskAugerPanel(tk.Frame):
         self._history_file = self._history_dir / "conversations.jsonl"
         self._status_file = self._history_dir / "work_status.jsonl"
         self._pending_response_file = self._history_dir / "pending_response.json"
-        self._draft_file = self._history_dir / "draft.txt"
+        self._draft_file = self._history_dir / "draft.json"
+        self._legacy_draft_file = self._history_dir / "draft.txt"
         self._auto_save_id = None
+        self._draft_cache_text = ""
+        self._draft_saved_at = None
         self._live_response_chunks = []
         self._live_response_prompt = ""
         self._panel_state_file = state_dir() / "ask_genny_panel.json"
@@ -121,6 +128,25 @@ class AskAugerPanel(tk.Frame):
             if candidate and Path(candidate).exists():
                 return str(Path(candidate))
         return str(Path.home() / f".local/bin/{cli}")
+
+    def _load_header_brand_image(self):
+        asset_path = Path(__file__).resolve().parent / "assets" / "ask_genny_header.png"
+        if not asset_path.exists():
+            return None
+        try:
+            image = tk.PhotoImage(file=str(asset_path))
+            max_width = 28
+            max_height = 24
+            scale = max(
+                1,
+                (image.width() + max_width - 1) // max_width,
+                (image.height() + max_height - 1) // max_height,
+            )
+            if scale > 1:
+                image = image.subsample(scale, scale)
+            return image
+        except Exception:
+            return None
 
     def _load_panel_state(self):
         data = {}
@@ -426,18 +452,29 @@ class AskAugerPanel(tk.Frame):
     def _build_ui(self):
         """Build the panel UI."""
         # Header
-        header = tk.Frame(self, bg=ASK_HEADER_BG, height=30)
+        header = tk.Frame(self, bg=ASK_HEADER_BG, height=34)
         header.pack(fill=tk.X, side=tk.TOP)
         header.pack_propagate(False)
         self._header = header
-        
+
+        brand = tk.Frame(header, bg=ASK_HEADER_BG)
+        brand.pack(side=tk.LEFT, padx=(10, 10))
+
+        self._header_brand_image = self._load_header_brand_image()
+        if self._header_brand_image is not None:
+            tk.Label(
+                brand,
+                image=self._header_brand_image,
+                bg=ASK_HEADER_BG,
+            ).pack(side=tk.LEFT, padx=(0, 6))
+
         tk.Label(
-            header,
-            text=f"  [AI]  Ask {assistant_name()}",
+            brand,
+            text=f"Ask {assistant_name()}",
             font=('Segoe UI', 11, 'bold'),
             fg=ASK_HEADER_ACCENT,
             bg=ASK_HEADER_BG
-        ).pack(side=tk.LEFT, padx=10)
+        ).pack(side=tk.LEFT)
 
         tk.Label(
             header,
@@ -527,6 +564,22 @@ class AskAugerPanel(tk.Frame):
             padx=6, pady=0,
         )
         # Don't pack yet — shown dynamically when locked
+
+        self._cancel_btn = tk.Button(
+            header,
+            text="Stop",
+            command=self._cancel_request,
+            bg=ASK_HEADER_BG,
+            fg=ASK_HEADER_ACCENT,
+            font=('Segoe UI', 8, 'bold'),
+            relief=tk.FLAT,
+            cursor='hand2',
+            activebackground=ASK_HEADER_BG_ACTIVE,
+            activeforeground=ASK_HEADER_ACCENT_ACTIVE,
+            padx=6,
+            pady=0,
+        )
+        # Don't pack yet — shown only while a cancellable request is running
 
         # Last-response age label
         self._session_age_label = tk.Label(
@@ -711,9 +764,8 @@ class AskAugerPanel(tk.Frame):
             try:
                 popped_draft = self._popout_panel.input_text.get('1.0', tk.END).strip()
                 if popped_draft:
-                    # Write immediately so draft file is current
-                    with open(self._draft_file, 'w', encoding='utf-8') as f:
-                        f.write(popped_draft)
+                    # Write immediately so the docked panel can recover the current draft.
+                    self._write_draft_snapshot(popped_draft)
                     # Also inject directly into the docked panel input
                     self.input_text.delete('1.0', tk.END)
                     self.input_text.insert('1.0', popped_draft)
@@ -804,20 +856,19 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
             )
             return
         
-        # Update status
-        self.status_label.config(text="Processing...")
-        self._set_processing()
-
         # Handle /help inline — no daemon or copilot call needed
         if prompt.strip().lower().startswith('/help'):
             self.response.append_markdown(self._SLASH_HELP)
-            self._set_ready(check_lock=False)
-            self.status_label.config(text="Ready")
             return
 
         # Check for slash command — route to daemon
         daemon_action = self._detect_host_intent(prompt)
+        self._cancel_requested = False
+        self._active_request_mode = None
+        self._cancel_supported = False
+        self.status_label.config(text="Processing...")
         if daemon_action:
+            self._set_processing()
             if daemon_action in ('restart_auger', 'rebuild_auger'):
                 note = f"[{product_name()} lifecycle] Requested {daemon_action.replace('_', ' ')}"
                 self._save_to_history('system', note)
@@ -830,6 +881,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
 
         # Route through host daemon so copilot runs as the host user (who owns
         # ~/.copilot/session-state/). Falls back to local auger CLI if daemon is down.
+        self._active_request_mode = 'daemon'
+        self._cancel_supported = True
+        self._set_processing()
         thread = threading.Thread(target=self._run_via_ask_daemon, args=(prompt,), daemon=True)
         thread.start()
     
@@ -912,6 +966,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                             self._clear_pending_response()
                             self._queue.put(('done', None))
                             return
+                        elif msg_type == 'cancelled':
+                            self._queue.put(('cancelled', msg or 'Request cancelled'))
+                            return
                         elif msg_type == 'error':
                             self._queue.put(('error', msg or 'Daemon returned error'))
                             return
@@ -920,6 +977,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         except urllib.error.URLError:
             # Daemon not reachable — fall back to local auger CLI
             augmented_prompt = self._behavior_preamble() + prompt
+            self._active_request_mode = 'local'
+            self._cancel_supported = True
             self._run_auger(augmented_prompt, on_complete=self._post_local_session_result)
             return
         except Exception as e:
@@ -950,20 +1009,31 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 self._queue.put(('line', clean_line))
             
             self._process.wait()
+            rc = self._process.returncode
             
             # Check for widget code in response
             full_response = ''.join(response_lines)
-            self._check_for_widget_code(full_response)
-            
-            # Save response to history
-            self._save_to_history('assistant', full_response)
-            self._clear_pending_response()
-            
-            # Done — pass optional callback so caller can react
-            self._queue.put(('done', on_complete))
+            if self._cancel_requested:
+                self._queue.put(('cancelled', 'Request cancelled — lock released normally'))
+            elif rc == 0 or full_response:
+                self._check_for_widget_code(full_response)
+                
+                # Save response to history
+                self._save_to_history('assistant', full_response)
+                self._clear_pending_response()
+                
+                # Done — pass optional callback so caller can react
+                self._queue.put(('done', on_complete))
+            else:
+                self._queue.put(('error', 'Ask Genny request exited without a response'))
         
         except Exception as e:
-            self._queue.put(('error', str(e)))
+            if self._cancel_requested:
+                self._queue.put(('cancelled', 'Request cancelled — lock released normally'))
+            else:
+                self._queue.put(('error', str(e)))
+        finally:
+            self._process = None
     
     def _check_for_widget_code(self, response):
         """Check if response contains a widget class definition, file path, or SQL."""
@@ -1013,6 +1083,19 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                     self._save_pending_response_note(f"[Error before completion]\n{data}")
                     self.status_label.config(text="Error")
                     self._set_ready(check_lock=True)
+
+                elif msg_type == 'cancel_error':
+                    self.response.append_markdown(f"**⚠️ Cancel failed:** {data}\n")
+                    self.status_label.config(text="Processing...")
+                    self._cancel_requested = False
+                    if self._cancel_supported:
+                        self._cancel_btn.config(state=tk.NORMAL, text='Stop')
+
+                elif msg_type == 'cancelled':
+                    self.response.append_markdown(f"*{data}*\n")
+                    self._clear_pending_response()
+                    self._set_ready(check_lock=True)
+                    self.status_label.config(text="Cancelled")
                 
                 elif msg_type == 'done':
                     self.status_label.config(text="Ready")
@@ -1295,6 +1378,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self._save_to_history("system", "[Self-initialization: reading BOOTSTRAP_PROMPT.md + AUGER_BEHAVIOR.md]")
 
         self.status_label.config(text="Initializing...")
+        self._active_request_mode = 'local'
+        self._cancel_supported = True
+        self._cancel_requested = False
         self._set_processing()
         thread = threading.Thread(
             target=self._run_auger,
@@ -1327,6 +1413,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self.response.append_raw("\n")
         self._save_to_history("system", "[Behavior update: reading AUGER_BEHAVIOR.md]")
         self.status_label.config(text="Updating behavior...")
+        self._active_request_mode = 'local'
+        self._cancel_supported = True
+        self._cancel_requested = False
         self._set_processing()
         thread = threading.Thread(
             target=self._run_auger,
@@ -1543,15 +1632,64 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         """Start auto-saving draft text."""
         self._save_draft()
     
+    def _write_draft_snapshot(self, draft: str, saved_at: str | None = None):
+        draft = (draft or '').strip()
+        if not draft:
+            self._clear_draft()
+            return
+        timestamp = saved_at or datetime.now().isoformat()
+        payload = {
+            'text': draft,
+            'saved_at': timestamp,
+        }
+        self._draft_file.write_text(json.dumps(payload), encoding='utf-8')
+        self._draft_cache_text = draft
+        self._draft_saved_at = timestamp
+        try:
+            if self._legacy_draft_file.exists():
+                self._legacy_draft_file.unlink()
+        except Exception:
+            pass
+
+    def _read_saved_draft(self):
+        if self._draft_file.exists():
+            try:
+                payload = json.loads(self._draft_file.read_text(encoding='utf-8'))
+                if isinstance(payload, dict):
+                    draft = str(payload.get('text') or '').strip()
+                    saved_at = str(payload.get('saved_at') or '').strip()
+                    if draft:
+                        return draft, saved_at
+            except Exception:
+                pass
+
+        if self._legacy_draft_file.exists():
+            try:
+                draft = self._legacy_draft_file.read_text(encoding='utf-8').strip()
+            except Exception:
+                draft = ''
+            if draft:
+                return draft, ''
+        return '', ''
+
+    def _should_restore_draft(self, saved_at: str) -> bool:
+        if not saved_at:
+            return False
+        try:
+            age = datetime.now() - datetime.fromisoformat(saved_at)
+        except Exception:
+            return False
+        return age <= timedelta(hours=8)
+
     def _save_draft(self):
         """Save current input text as draft (auto-save every 3 seconds)."""
         try:
             draft = self.input_text.get('1.0', tk.END).strip()
             if draft:
-                with open(self._draft_file, 'w', encoding='utf-8') as f:
-                    f.write(draft)
-            elif self._draft_file.exists():
-                self._draft_file.unlink()
+                if draft != self._draft_cache_text:
+                    self._write_draft_snapshot(draft)
+            else:
+                self._clear_draft()
         except Exception as e:
             print(f"Failed to save draft: {e}")
         
@@ -1561,14 +1699,17 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
     def _restore_draft(self):
         """Restore draft text on startup."""
         try:
-            if self._draft_file.exists():
-                with open(self._draft_file, 'r', encoding='utf-8') as f:
-                    draft = f.read().strip()
-                    if draft:
-                        self.input_text.insert('1.0', draft)
-                        # Show visual indication
-                        self.status_label.config(text="Draft restored")
-                        self.after(3000, lambda: self.status_label.config(text=""))
+            draft, saved_at = self._read_saved_draft()
+            if not draft:
+                return
+            if not self._should_restore_draft(saved_at):
+                self._clear_draft()
+                return
+            self.input_text.insert('1.0', draft)
+            self._draft_cache_text = draft
+            self._draft_saved_at = saved_at
+            self.status_label.config(text="Draft restored")
+            self.after(3000, lambda: self.status_label.config(text=""))
         except Exception as e:
             print(f"Failed to restore draft: {e}")
     
@@ -1577,6 +1718,10 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         try:
             if self._draft_file.exists():
                 self._draft_file.unlink()
+            if self._legacy_draft_file.exists():
+                self._legacy_draft_file.unlink()
+            self._draft_cache_text = ""
+            self._draft_saved_at = None
         except Exception as e:
             print(f"Failed to clear draft: {e}")
 
@@ -1727,8 +1872,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         if not messagebox.askyesno(
             'Unlock Session',
             'Force-clear the Copilot session lock?\n\n'
-            'This will interrupt any in-progress request and allow\n'
-            'new requests to proceed.',
+            'Use this only for a stale or orphaned lock.\n'
+            'For a live request, use Stop instead so the process can exit cleanly.',
             icon='warning'
         ):
             return
@@ -1758,10 +1903,74 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         except Exception:
             pass
 
+    def _cancel_request(self):
+        if not self._cancel_supported or self._cancel_requested:
+            return
+        self._cancel_requested = True
+        self.status_label.config(text='Cancelling...')
+        try:
+            self._cancel_btn.config(state=tk.DISABLED, text='Stopping...')
+        except Exception:
+            pass
+
+        if self._active_request_mode == 'daemon':
+            threading.Thread(target=self._cancel_daemon_request, daemon=True).start()
+        elif self._active_request_mode == 'local':
+            threading.Thread(target=self._cancel_local_request, daemon=True).start()
+
+    def _cancel_daemon_request(self):
+        import urllib.request, json as _json
+        try:
+            req = urllib.request.Request(
+                'http://localhost:7437/cmd',
+                data=_json.dumps({'action': 'cancel_ask'}).encode(),
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(req, timeout=10) as resp:
+                result = _json.loads(resp.read().decode('utf-8', errors='replace'))
+        except Exception as exc:
+            self._queue.put(('cancel_error', str(exc)))
+            return
+
+        if result.get('status') != 'ok':
+            self._queue.put(('cancel_error', result.get('message') or 'Daemon cancel failed'))
+
+    def _cancel_local_request(self):
+        proc = self._process
+        if not proc or proc.poll() is not None:
+            return
+        try:
+            proc.send_signal(signal.SIGINT)
+            proc.wait(timeout=3)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            self._queue.put(('cancel_error', 'Could not send SIGINT to local Ask Genny process'))
+            return
+
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            self._queue.put(('cancel_error', 'Could not send SIGTERM to local Ask Genny process'))
+            return
+
+        try:
+            proc.kill()
+            proc.wait(timeout=1)
+        except Exception as exc:
+            self._queue.put(('cancel_error', f'Could not stop local Ask Genny process: {exc}'))
+
     # ── Processing state helpers ──────────────────────────────────────────────
 
     def _set_processing(self):
-        """Disable send button, start pulsating dot, hide unlock button."""
+        """Disable send button, start pulsating dot, and show Stop when supported."""
         self.ask_btn.config(state=tk.DISABLED)
         self._model_combo.config(state='disabled')
         self._session_combo.config(state='disabled')
@@ -1770,6 +1979,14 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self._is_processing = True
         try:
             self._unlock_btn.pack_forget()
+        except Exception:
+            pass
+        try:
+            if self._cancel_supported:
+                self._cancel_btn.config(state=tk.NORMAL, text='Stop')
+                self._cancel_btn.pack(side=tk.RIGHT, padx=(0, 4))
+            else:
+                self._cancel_btn.pack_forget()
         except Exception:
             pass
         self._pulse_dot()
@@ -1784,6 +2001,14 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self._rename_session_btn.config(state=tk.NORMAL)
         self._refresh_session_selector()
         self._is_processing = False
+        self._cancel_requested = False
+        self._cancel_supported = False
+        self._active_request_mode = None
+        self._process = None
+        try:
+            self._cancel_btn.pack_forget()
+        except Exception:
+            pass
         if check_lock:
             def _verify():
                 import urllib.request, json as _j

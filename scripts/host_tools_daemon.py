@@ -44,6 +44,8 @@ KEEPALIVE_REASON = f'Keep Workspace Awake from {APP_NAME} tray'
 KEEPALIVE_APP_ID = os.environ.get('AUGER_CLI_NAME', 'auger')
 KEEPALIVE_INHIBIT_FLAGS = 'idle:suspend'
 KEEPALIVE_LOCK = threading.Lock()
+ACTIVE_COPILOT_LOCK = threading.Lock()
+ACTIVE_COPILOT: dict[str, object] = {}
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────
@@ -98,6 +100,134 @@ def _clear_keepalive_state():
         KEEPALIVE_STATE_FILE.unlink()
     except FileNotFoundError:
         pass
+
+
+def _lock_meta_path(lock_path: Path) -> Path:
+    return lock_path.with_suffix(lock_path.suffix + '.json')
+
+
+def _write_lock_metadata(lock_path: Path, *, pid: int | None = None):
+    payload = {
+        'acquired_at': time.time(),
+        'pid': pid or os.getpid(),
+    }
+    try:
+        meta_path = _lock_meta_path(lock_path)
+        meta_path.write_text(json.dumps(payload))
+        os.chmod(meta_path, 0o666)
+    except Exception:
+        pass
+
+
+def _clear_lock_metadata(lock_path: Path):
+    try:
+        _lock_meta_path(lock_path).unlink()
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
+def _register_active_copilot(
+    process: subprocess.Popen,
+    *,
+    request_id: str,
+    prompt: str,
+    session_mode: str,
+    session_id: str | None,
+    model: str,
+) -> dict[str, object]:
+    state: dict[str, object] = {
+        'request_id': request_id,
+        'pid': process.pid,
+        'process': process,
+        'prompt': prompt[:200],
+        'session_mode': session_mode,
+        'session_id': session_id or '',
+        'model': model,
+        'started_at': time.time(),
+        'cancel_requested': False,
+    }
+    with ACTIVE_COPILOT_LOCK:
+        ACTIVE_COPILOT.clear()
+        ACTIVE_COPILOT.update(state)
+        return ACTIVE_COPILOT
+
+
+def _active_copilot_snapshot() -> dict[str, object]:
+    with ACTIVE_COPILOT_LOCK:
+        if not ACTIVE_COPILOT:
+            return {}
+        proc = ACTIVE_COPILOT.get('process')
+        active = bool(proc and getattr(proc, 'poll', lambda: 0)() is None)
+        return {
+            key: value
+            for key, value in ACTIVE_COPILOT.items()
+            if key != 'process'
+        } | {'active': active}
+
+
+def _clear_active_copilot(request_id: str | None = None):
+    with ACTIVE_COPILOT_LOCK:
+        if request_id and ACTIVE_COPILOT.get('request_id') != request_id:
+            return
+        ACTIVE_COPILOT.clear()
+
+
+def _interrupt_process_gracefully(proc: subprocess.Popen) -> str:
+    steps = (
+        (signal.SIGINT, 3),
+        (signal.SIGTERM, 2),
+        (signal.SIGKILL, 1),
+    )
+    last_signal = 'SIGINT'
+    for sig, timeout in steps:
+        last_signal = sig.name
+        if proc.poll() is not None:
+            return last_signal
+        try:
+            proc.send_signal(sig)
+        except ProcessLookupError:
+            return last_signal
+        except Exception:
+            try:
+                os.kill(proc.pid, sig)
+            except ProcessLookupError:
+                return last_signal
+        try:
+            proc.wait(timeout=timeout)
+            return last_signal
+        except subprocess.TimeoutExpired:
+            continue
+    return last_signal
+
+
+def handle_cancel_ask(cmd: dict) -> dict:
+    with ACTIVE_COPILOT_LOCK:
+        proc = ACTIVE_COPILOT.get('process')
+        if not proc or getattr(proc, 'poll', lambda: 0)() is not None:
+            ACTIVE_COPILOT.clear()
+            return {'status': 'ok', 'message': 'No active Ask Genny request'}
+        if ACTIVE_COPILOT.get('cancel_requested'):
+            return {
+                'status': 'ok',
+                'message': 'Cancel already in progress',
+                'pid': proc.pid,
+                'request_id': ACTIVE_COPILOT.get('request_id', ''),
+            }
+        ACTIVE_COPILOT['cancel_requested'] = True
+        ACTIVE_COPILOT['cancel_requested_at'] = time.time()
+        request_id = str(ACTIVE_COPILOT.get('request_id') or '')
+        pid = proc.pid
+
+    signal_used = _interrupt_process_gracefully(proc)
+    return {
+        'status': 'ok',
+        'message': 'Cancel requested',
+        'pid': pid,
+        'request_id': request_id,
+        'signal': signal_used,
+    }
 
 
 def _pid_cmdline(pid: int) -> str:
@@ -1109,6 +1239,7 @@ def stream_ask_copilot(cmd: dict, write_line):
         while True:
             try:
                 fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _write_lock_metadata(lock_path)
                 break
             except BlockingIOError:
                 if time.time() > _lock_deadline:
@@ -1128,13 +1259,24 @@ def stream_ask_copilot(cmd: dict, write_line):
                     'content': prompt, 'source': source
                 }) + '\n')
 
+            request_id = str(uuid.uuid4())
+
             def _run_copilot(s_args, enriched):
-                """Run copilot subprocess and return (response_lines, returncode)."""
+                """Run copilot subprocess and return (response_lines, returncode, cancelled)."""
                 lines_out = []
+                run_name_args = [] if '--resume' in s_args else name_args
                 p = subprocess.Popen(
-                    [copilot_bin] + model_args + name_args + ['-p', enriched, '--allow-all'] + s_args,
+                    [copilot_bin] + model_args + run_name_args + ['-p', enriched, '--allow-all'] + s_args,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, env=env
+                )
+                active_state = _register_active_copilot(
+                    p,
+                    request_id=request_id,
+                    prompt=prompt,
+                    session_mode=session_mode,
+                    session_id=session_id,
+                    model=selected_model,
                 )
                 _stats_prefixes = (
                     'Total usage est:', 'API time spent:', 'Total session time:',
@@ -1165,9 +1307,12 @@ def stream_ask_copilot(cmd: dict, write_line):
                     except Exception:
                         pass
                     raise
-                return lines_out, p.returncode
+                finally:
+                    was_cancelled = bool(active_state.get('cancel_requested'))
+                    _clear_active_copilot(request_id)
+                return lines_out, p.returncode, was_cancelled
 
-            response_lines, rc = _run_copilot(session_args, _enriched_prompt)
+            response_lines, rc, was_cancelled = _run_copilot(session_args, _enriched_prompt)
 
             # Auto-detect CAPIError / 400 Bad Request in output — corrupt session.
             # Clear the pinned session and retry once with a fresh --continue session.
@@ -1182,7 +1327,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                 'invalid_request_error',
             )
             _output_lower = ' '.join(response_lines).lower()
-            if rc != 0 or any(m in _output_lower for m in _caperror_markers):
+            if not was_cancelled and (rc != 0 or any(m in _output_lower for m in _caperror_markers)):
                 if session_mode == 'pinned':
                     try:
                         session_id_file.unlink(missing_ok=True)
@@ -1190,14 +1335,21 @@ def stream_ask_copilot(cmd: dict, write_line):
                         pass
                     write_line({'type': 'progress',
                                 'message': '[WARN] Session error detected — clearing pinned session and retrying with fresh session…'})
-                    response_lines, rc = _run_copilot(['--continue'], _enriched_prompt)
+                    response_lines, rc, was_cancelled = _run_copilot(['--continue'], _enriched_prompt)
                     session_id = None
                 else:
                     session_mode = 'new'
                     session_id = str(uuid.uuid4())
                     write_line({'type': 'progress',
                                 'message': '[WARN] Session error detected — retrying with a fresh non-pinned session…'})
-                    response_lines, rc = _run_copilot(['--resume', session_id], _enriched_prompt)
+                    response_lines, rc, was_cancelled = _run_copilot(['--resume', session_id], _enriched_prompt)
+
+            if was_cancelled:
+                write_line({
+                    'type': 'cancelled',
+                    'message': 'Request cancelled — lock released normally',
+                })
+                return
 
             # Pin session ID after every successful call so next invocation uses
             # --resume instead of --continue (preserves full conversation context).
@@ -1246,6 +1398,7 @@ def stream_ask_copilot(cmd: dict, write_line):
         except Exception as e:
             write_line({'type': 'error', 'message': str(e)})
         finally:
+            _clear_lock_metadata(lock_path)
             fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
 
@@ -1697,6 +1850,7 @@ def handle_unlock_session(cmd: dict) -> dict:
     """Force-clear the Copilot session lock file so a stuck lock can be released."""
     lock_path = AUGER_DIR / '.copilot.lock'
     try:
+        _clear_lock_metadata(lock_path)
         # Advisory flock locks attach to the inode, not the file path contents.
         # Replacing the file ensures future open() calls target a fresh inode,
         # even if a dead/stuck process still holds a lock on the old one.
@@ -1724,6 +1878,7 @@ SYNC_ACTIONS = {
     'open_path':              handle_open_path,
     'launch_wizard':          handle_launch_wizard,
     'unlock_session':         handle_unlock_session,
+    'cancel_ask':             handle_cancel_ask,
 }
 
 
@@ -1769,8 +1924,12 @@ STREAM_ACTIONS = {
 class DaemonHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Suppress routine GET /health noise; log everything else
-        if '/health' not in (args[0] if args else ''):
-            print(f'[daemon] {fmt % args}')
+        try:
+            rendered = fmt % args if args else fmt
+        except Exception:
+            rendered = f'{fmt} {" ".join(str(arg) for arg in args)}'.strip()
+        if '/health' not in rendered:
+            print(f'[daemon] {rendered}')
 
     def _send_json(self, data: dict, status: int = 200):
         body = json.dumps(data).encode()
@@ -1806,7 +1965,8 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/health':
             keepalive = _keepalive_state()
-            self._send_json({'status': 'ok', 'daemon': 'auger-host-tools', 'port': PORT,
+            daemon_name = f"{APP_NAME.lower().replace(' ', '-')}-host-tools"
+            self._send_json({'status': 'ok', 'daemon': daemon_name, 'port': PORT,
                              'browser': BROWSER_BIN or None, 'keepalive': keepalive})
         elif self.path == '/keepalive_status':
             state = _keepalive_state()
@@ -1826,11 +1986,21 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
                             _fcntl.flock(_lf, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
                             _fcntl.flock(_lf, _fcntl.LOCK_UN)
                             locked = False
+                            _clear_lock_metadata(lock_path)
                         except BlockingIOError:
                             locked = True
-                            locked_secs = int(time.time() - lock_path.stat().st_mtime)
+                            try:
+                                meta = json.loads(_lock_meta_path(lock_path).read_text())
+                                acquired_at = float(meta.get('acquired_at') or 0)
+                                if acquired_at > 0:
+                                    locked_secs = max(0, int(time.time() - acquired_at))
+                                else:
+                                    locked_secs = int(time.time() - lock_path.stat().st_mtime)
+                            except Exception:
+                                locked_secs = int(time.time() - lock_path.stat().st_mtime)
             except Exception:
                 pass
+            active_ask = _active_copilot_snapshot()
             try:
                 if chat_history.exists():
                     import json as _jh
@@ -1858,6 +2028,8 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
                 'locked_secs': locked_secs,
                 'last_response_ts': last_response_ts,
                 'lock_path': str(lock_path),
+                'active_request': bool(active_ask.get('active')),
+                'cancel_requested': bool(active_ask.get('cancel_requested')),
             })
         elif self.path == '/restart_daemon':
             self._restart_daemon_self()

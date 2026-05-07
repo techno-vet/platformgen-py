@@ -22,7 +22,7 @@ if [ -d "$SOURCE_DIR" ]; then
 
     mkdir -p "$STATE_DIR/logs"
 
-    for name in .session_id .session_snapshot.json .copilot.lock; do
+    for name in .session_id .session_snapshot.json; do
         if [ -e "$SOURCE_DIR/$name" ] || [ -L "$SOURCE_DIR/$name" ]; then
             rm -rf "$STATE_DIR/$name"
             ln -s "$SOURCE_DIR/$name" "$STATE_DIR/$name"

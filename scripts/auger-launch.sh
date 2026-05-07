@@ -268,13 +268,30 @@ if [ "$VENV_MODE" -eq 1 ]; then
         export HTTPS_PROXY="$PROXY_URL"
     fi
 
-    # Install/update the package if dependencies or console scripts are missing.
+    # Install/update the package if dependencies or console scripts are missing,
+    # or if the venv is not pointing at the live repo in editable mode.
+    _needs_repo_install=0
+    if ! "$VENV_DIR/bin/python3" - <<PY >/dev/null 2>&1
+import inspect
+import sys
+from pathlib import Path
+import auger
+
+repo_dir = Path(${REPO_DIR@Q}).resolve()
+module_path = Path(inspect.getfile(auger)).resolve()
+sys.exit(0 if str(module_path).startswith(str(repo_dir)) else 1)
+PY
+    then
+        _needs_repo_install=1
+    fi
+
     if [ "$INSTALL_ONLY" -eq 1 ] || \
        ! "$VENV_DIR/bin/python3" -c "import click, auger" 2>/dev/null || \
-       [ ! -x "$VENV_DIR/bin/${AUGER_CLI_NAME:-auger}" ]; then
-        echo "[PKG]  Installing platform package and dependencies..."
+       [ ! -x "$VENV_DIR/bin/${AUGER_CLI_NAME:-auger}" ] || \
+       [ "$_needs_repo_install" -eq 1 ]; then
+        echo "[PKG]  Installing platform package and dependencies in editable mode..."
         "$VENV_DIR/bin/pip" install --quiet $PIP_PROXY_ARGS --upgrade pip
-        "$VENV_DIR/bin/pip" install --quiet $PIP_PROXY_ARGS "$REPO_DIR"
+        "$VENV_DIR/bin/pip" install --quiet $PIP_PROXY_ARGS --editable "$REPO_DIR"
         echo "[OK]  Package installed in venv"
     fi
 

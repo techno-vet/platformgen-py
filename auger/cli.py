@@ -236,6 +236,23 @@ def run_copilot_ask(prompt_text=None):
             lock_path.chmod(0o666)
         except Exception:
             pass
+        lock_meta_path = lock_path.with_suffix(lock_path.suffix + '.json')
+
+        def _write_lock_metadata():
+            payload = {'acquired_at': _time.time(), 'pid': os.getpid()}
+            try:
+                lock_meta_path.write_text(_json.dumps(payload))
+                lock_meta_path.chmod(0o666)
+            except Exception:
+                pass
+
+        def _clear_lock_metadata():
+            try:
+                lock_meta_path.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception:
+                pass
         session_id_file = state_dir() / '.session_id'
         pinned_session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
         selected_model = (env.get('AUGER_COPILOT_MODEL') or 'auto').strip() or 'auto'
@@ -342,6 +359,7 @@ def run_copilot_ask(prompt_text=None):
                 # Prevents unlocking mid-stream and corrupting events.jsonl.
                 try:
                     fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    _write_lock_metadata()
                 except BlockingIOError:
                     click.echo(
                         f'⏳ Another Ask {assistant_name()} request is already processing. '
@@ -351,8 +369,9 @@ def run_copilot_ask(prompt_text=None):
                     import sys as _sys2; _sys2.exit(1)
                 try:
                     # Stream output to terminal AND capture for chat_history.jsonl
+                    run_name_args = [] if '--resume' in session_args else name_args
                     proc = subprocess.Popen(
-                        ["copilot"] + model_args + name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
+                        ["copilot"] + model_args + run_name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         env=env
                     )
@@ -445,8 +464,9 @@ def run_copilot_ask(prompt_text=None):
                             )
 
                         response_lines = []
+                        run_name_args = [] if '--resume' in session_args else name_args
                         proc2 = subprocess.Popen(
-                            ["copilot"] + model_args + name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
+                            ["copilot"] + model_args + run_name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             env=env
                         )
@@ -502,6 +522,7 @@ def run_copilot_ask(prompt_text=None):
                     except Exception:
                         pass
                 finally:
+                    _clear_lock_metadata()
                     fcntl.flock(lock_fh, fcntl.LOCK_UN)
         except FileNotFoundError:
             click.echo("❌ Error: 'copilot' command not found")
