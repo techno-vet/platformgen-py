@@ -154,6 +154,29 @@ X-GNOME-Autostart-enabled=true
 AUTOSTART
 }
 
+install_cli_wrappers() {
+    local user_bin venv_python wrapper target
+    user_bin="$HOME/.local/bin"
+    venv_python="$AUGER_DIR/venv/bin/python3"
+
+    mkdir -p "$user_bin"
+    if [ ! -x "$venv_python" ]; then
+        echo "[WARN]   Skipping CLI wrapper install; venv python not found at $venv_python"
+        return 0
+    fi
+
+    for wrapper in auger platformgen genny; do
+        target="$user_bin/$wrapper"
+        cat > "$target" <<EOF
+#!/bin/bash
+exec "$venv_python" -m auger.cli "\$@"
+EOF
+        chmod +x "$target"
+    done
+
+    echo "[OK]  Installed host CLI wrappers in $user_bin (auger, platformgen, genny)"
+}
+
 trap 'rc=$?; if [ "$rc" -ne 0 ] && [ -f "$PROGRESS_LOG" ]; then progress_error "Auger startup failed."; fi' EXIT
 
 echo ""
@@ -254,6 +277,8 @@ if [ "$VENV_MODE" -eq 1 ]; then
         "$VENV_DIR/bin/pip" install --quiet $PIP_PROXY_ARGS "$REPO_DIR"
         echo "[OK]  Package installed in venv"
     fi
+
+    install_cli_wrappers
 
     if [ "$INSTALL_ONLY" -eq 1 ]; then
         install_desktop_launchers

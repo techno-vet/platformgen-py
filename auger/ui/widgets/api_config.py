@@ -188,6 +188,7 @@ class APIConfigWidget(tk.Frame):
         # Add all sections
         self._add_jenkins_section()
         self._add_openai_section()
+        self._add_redux_section()
         self._add_local_ai_section()
         self._add_cloudflare_section()
         self._add_youtube_section()
@@ -505,6 +506,97 @@ class APIConfigWidget(tk.Frame):
         except Exception as e:
             self._log(f"OpenAI: ✗ Error: {str(e)[:80]}", 'err')
 
+    def _add_redux_section(self):
+        """Add ReDuX section."""
+        self._add_section_header("ReDuX", "")
+
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+
+        self._add_field(section, "API URL:", "REDUX_API_URL")
+        self._add_field(section, "API Key:", "REDUX_API_KEY", is_masked=True)
+        self._add_field(section, "Email:", "REDUX_EMAIL")
+        self._add_field(section, "Password:", "REDUX_PASSWORD", is_masked=True)
+
+        help_label = tk.Label(
+            section,
+            text=(
+                "ReDuX modernization platform integration. PlatformGen will likely care most about "
+                "API URL and API Key first; email/password are included until the required auth flow is confirmed."
+            ),
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+
+        self._add_test_button(section, self._test_redux)
+        self._add_divider()
+
+    def _test_redux(self):
+        """Test ReDuX connectivity with a generic API probe."""
+        base_url = self.entries['REDUX_API_URL'].get().strip().rstrip('/')
+        api_key = self.entries['REDUX_API_KEY'].get().strip()
+        email = self.entries['REDUX_EMAIL'].get().strip()
+        password = self.entries['REDUX_PASSWORD'].get().strip()
+
+        if not base_url:
+            self._log("ReDuX: API URL required", 'err')
+            return
+
+        if not api_key and not (email and password):
+            self._log("ReDuX: API Key or email/password required", 'err')
+            return
+
+        candidate_urls = [
+            base_url,
+            f"{base_url}/health",
+            f"{base_url}/api/health",
+            f"{base_url}/api/v1/health",
+        ]
+        candidate_headers = []
+        if api_key:
+            candidate_headers.extend([
+                {'Authorization': f'Bearer {api_key}'},
+                {'X-API-Key': api_key},
+                {'x-api-key': api_key},
+                {'api-key': api_key},
+            ])
+        else:
+            candidate_headers.append({})
+
+        self._log("ReDuX: Testing...", 'info')
+
+        for endpoint in candidate_urls:
+            for headers in candidate_headers:
+                try:
+                    response = requests.get(endpoint, headers=headers, timeout=10, allow_redirects=True)
+                    if response.status_code == 200:
+                        auth_mode = next(iter(headers.keys()), 'no auth')
+                        self._log(f"ReDuX: ✓ Connected to {endpoint} via {auth_mode}", 'ok')
+                        return
+                    if response.status_code in (401, 403):
+                        self._log(
+                            f"ReDuX: Reached {endpoint} but credentials were rejected (HTTP {response.status_code})",
+                            'err'
+                        )
+                        return
+                except requests.exceptions.ConnectionError:
+                    continue
+                except requests.exceptions.Timeout:
+                    self._log(f"ReDuX: Timeout reaching {endpoint}", 'err')
+                    return
+                except Exception as e:
+                    self._log(f"ReDuX: Error probing {endpoint}: {str(e)[:80]}", 'err')
+                    return
+
+        self._log(
+            "ReDuX: Could not confirm connectivity. Verify the API URL and auth method, then retry.",
+            'err'
+        )
+
     def _add_local_ai_section(self):
         """Add local AI runtime section."""
         self._add_section_header("Local AI", "")
@@ -514,7 +606,7 @@ class APIConfigWidget(tk.Frame):
 
         self._add_field(section, "Ollama Base URL:", "OLLAMA_BASE_URL", default="http://localhost:11434")
         self._add_field(section, "ComfyUI Base URL:", "COMFYUI_BASE_URL", default="http://localhost:8188")
-        self._add_field(section, "Default Checkpoint:", "COMFYUI_CHECKPOINT", default="v1-5-pruned-emaonly.safetensors")
+        self._add_field(section, "Default Checkpoint:", "COMFYUI_CHECKPOINT", default="v1-5-pruned-emaonly-fp16.safetensors")
 
         help_label = tk.Label(
             section,

@@ -211,6 +211,7 @@ widgets:
       - "~/.auger/.env  (COMFYUI_BASE_URL, COMFYUI_CHECKPOINT)"
     auger_rules:
       - "Use COMFYUI_BASE_URL to target the active ComfyUI service or ingress"
+      - "Default checkpoint should align with the SD1.5 FP16 file seeded into /basedir/models/checkpoints when available"
       - "Workflow override JSON may use {{prompt}}, {{negative_prompt}}, {{checkpoint}}, {{width}}, {{height}}, {{steps}}, {{cfg}}, and {{seed}} placeholders"
     session_resume_hint: "Set COMFYUI_BASE_URL in API Keys+ first, then queue a prompt or paste a workflow override"
 

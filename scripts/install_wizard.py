@@ -457,7 +457,11 @@ def _docker_runtime_state():
 def _find_host_auger_bin():
     candidates = [
         shutil.which("auger"),
+        shutil.which("genny"),
+        shutil.which("platformgen"),
         str(Path.home() / ".local" / "bin" / "auger"),
+        str(Path.home() / ".local" / "bin" / "genny"),
+        str(Path.home() / ".local" / "bin" / "platformgen"),
     ]
     for candidate in candidates:
         if candidate and Path(candidate).exists():

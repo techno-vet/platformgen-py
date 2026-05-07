@@ -45,6 +45,17 @@ COPILOT_MODEL_OPTIONS = (
     "gpt-4.1",
 )
 
+ASK_HEADER_BG = '#24292f'
+ASK_HEADER_BG_ACTIVE = '#2f363d'
+ASK_HEADER_ACCENT = '#2ea043'
+ASK_HEADER_ACCENT_ACTIVE = '#3fb950'
+ASK_HEADER_TEXT = '#f0f6fc'
+ASK_HEADER_TEXT_MUTED = '#c9d1d9'
+ASK_HEADER_TEXT_DIM = '#8b949e'
+
+SESSION_HEALTH_POLL_MS = 5000
+SESSION_LOCK_STALE_SECS = 15
+
 
 class AskAugerPanel(tk.Frame):
     """Bottom panel for interacting with Auger AI agent."""
@@ -415,24 +426,25 @@ class AskAugerPanel(tk.Frame):
     def _build_ui(self):
         """Build the panel UI."""
         # Header
-        header = tk.Frame(self, bg='#007acc', height=30)
+        header = tk.Frame(self, bg=ASK_HEADER_BG, height=30)
         header.pack(fill=tk.X, side=tk.TOP)
         header.pack_propagate(False)
+        self._header = header
         
         tk.Label(
             header,
             text=f"  [AI]  Ask {assistant_name()}",
             font=('Segoe UI', 11, 'bold'),
-            fg='white',
-            bg='#007acc'
+            fg=ASK_HEADER_ACCENT,
+            bg=ASK_HEADER_BG
         ).pack(side=tk.LEFT, padx=10)
 
         tk.Label(
             header,
             text="Model",
             font=('Segoe UI', 9),
-            fg='white',
-            bg='#007acc'
+            fg=ASK_HEADER_TEXT_MUTED,
+            bg=ASK_HEADER_BG
         ).pack(side=tk.LEFT, padx=(4, 4))
 
         self._model_combo = ttk.Combobox(
@@ -448,8 +460,8 @@ class AskAugerPanel(tk.Frame):
             header,
             text="Session",
             font=('Segoe UI', 9),
-            fg='white',
-            bg='#007acc'
+            fg=ASK_HEADER_TEXT_MUTED,
+            bg=ASK_HEADER_BG
         ).pack(side=tk.LEFT, padx=(0, 4))
 
         self._session_combo = ttk.Combobox(
@@ -465,13 +477,13 @@ class AskAugerPanel(tk.Frame):
             header,
             text="+",
             command=self._new_session,
-            bg='#007acc',
-            fg='white',
+            bg=ASK_HEADER_BG,
+            fg=ASK_HEADER_ACCENT,
             font=('Segoe UI', 9, 'bold'),
             relief=tk.FLAT,
             cursor='hand2',
-            activebackground='#005a9e',
-            activeforeground='white',
+            activebackground=ASK_HEADER_BG_ACTIVE,
+            activeforeground=ASK_HEADER_ACCENT_ACTIVE,
             padx=6,
             pady=0,
         )
@@ -481,13 +493,13 @@ class AskAugerPanel(tk.Frame):
             header,
             text="Rename",
             command=self._rename_session,
-            bg='#007acc',
-            fg='white',
+            bg=ASK_HEADER_BG,
+            fg=ASK_HEADER_TEXT,
             font=('Segoe UI', 9),
             relief=tk.FLAT,
             cursor='hand2',
-            activebackground='#005a9e',
-            activeforeground='white',
+            activebackground=ASK_HEADER_BG_ACTIVE,
+            activeforeground=ASK_HEADER_TEXT,
             padx=6,
             pady=0,
         )
@@ -497,8 +509,8 @@ class AskAugerPanel(tk.Frame):
             header,
             text="",
             font=('Segoe UI', 9, 'italic'),
-            fg='#d0d0d0',
-            bg='#007acc'
+            fg=ASK_HEADER_TEXT_DIM,
+            bg=ASK_HEADER_BG
         )
         self.status_label.pack(side=tk.RIGHT, padx=10)
 
@@ -519,14 +531,14 @@ class AskAugerPanel(tk.Frame):
         # Last-response age label
         self._session_age_label = tk.Label(
             header, text="",
-            font=('Segoe UI', 8), fg='#a0c8e8', bg='#007acc'
+            font=('Segoe UI', 8), fg=ASK_HEADER_ACCENT_ACTIVE, bg=ASK_HEADER_BG
         )
         self._session_age_label.pack(side=tk.RIGHT, padx=(0, 4))
 
         # Lock status dot label: green=ok, yellow=warn, red=stuck
         self._lock_dot = tk.Label(
             header, text="●",
-            font=('Segoe UI', 11), fg='#4ec9b0', bg='#007acc'
+            font=('Segoe UI', 11), fg=ASK_HEADER_ACCENT, bg=ASK_HEADER_BG
         )
         self._lock_dot.pack(side=tk.RIGHT, padx=(0, 2))
 
@@ -542,13 +554,13 @@ class AskAugerPanel(tk.Frame):
                 header,
                 text="Pop Out",
                 command=self._popout,
-                bg='#007acc',
-                fg='#ffffff',
+                bg=ASK_HEADER_BG,
+                fg=ASK_HEADER_TEXT,
                 font=('Segoe UI', 9),
                 relief=tk.FLAT,
                 cursor='hand2',
-                activebackground='#005a9e',
-                activeforeground='white',
+                activebackground=ASK_HEADER_BG_ACTIVE,
+                activeforeground=ASK_HEADER_TEXT,
                 padx=8, pady=0,
             )
             self._popout_btn.pack(side=tk.RIGHT, padx=(0, 4))
@@ -675,9 +687,10 @@ class AskAugerPanel(tk.Frame):
             panel.winfo_children()[0],  # header frame (first child)
             text="⬒ Dock Back",
             command=lambda: self._dock_back(top, paned),
-            bg='#007acc', fg='white', font=('Segoe UI', 9),
+            bg=ASK_HEADER_BG, fg=ASK_HEADER_TEXT, font=('Segoe UI', 9),
             relief=tk.FLAT, cursor='hand2',
-            activebackground='#005a9e', padx=8, pady=0,
+            activebackground=ASK_HEADER_BG_ACTIVE, activeforeground=ASK_HEADER_TEXT,
+            padx=8, pady=0,
         ).pack(side=tk.LEFT, padx=(0, 4))
 
         # Collapse bottom pane in main window
@@ -1651,7 +1664,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
     # ── Session health monitor ────────────────────────────────────────────────
 
     def _start_session_health_poll(self):
-        """Start polling daemon /session_status every 12 seconds."""
+        """Start polling daemon /session_status for lock and freshness state."""
         self._poll_session_health()
 
     def _poll_session_health(self):
@@ -1676,31 +1689,37 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 pass
 
         threading.Thread(target=_run, daemon=True).start()
-        self.after(12000, self._poll_session_health)
+        self.after(SESSION_HEALTH_POLL_MS, self._poll_session_health)
 
     def _apply_session_health(self, data):
-        """Update header age label from session_status. Dot state is now driven
-        by _set_processing / _set_ready — not by daemon lock polling."""
+        """Update header age label and remote lock state from session_status."""
         if data is None:
             return
 
-        last_ts = data.get('last_response_ts')
-        age_str = ''
-        if last_ts:
-            try:
-                from datetime import timezone
-                dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
-                delta = datetime.now(timezone.utc) - dt
-                secs = int(delta.total_seconds())
-                if secs < 60:
-                    age_str = f'{secs}s ago'
-                elif secs < 3600:
-                    age_str = f'{secs // 60}m ago'
-                else:
-                    age_str = f'{secs // 3600}h ago'
-            except Exception:
-                age_str = ''
+        self._session_locked = bool(data.get('locked', False))
+        self._session_locked_secs = int(data.get('locked_secs') or 0)
+        self._session_last_ts = data.get('last_response_ts')
+
+        if self._session_locked:
+            lock_age = self._format_lock_age(self._session_locked_secs)
+            age_str = f'lock {lock_age}' if lock_age else 'locked'
+        else:
+            age_str = ''
         self._session_age_label.config(text=age_str)
+
+        if not self._is_processing:
+            self._apply_lock_state(self._session_locked, locked_secs=self._session_locked_secs)
+
+    def _format_lock_age(self, seconds: int) -> str:
+        try:
+            secs = max(0, int(seconds))
+        except Exception:
+            return ''
+        if secs < 60:
+            return f'{secs}s'
+        if secs < 3600:
+            return f'{secs // 60}m'
+        return f'{secs // 3600}h'
 
     def _force_unlock_session(self):
         """Force-clear the Copilot session lock after user confirmation."""
@@ -1732,7 +1751,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
             except Exception:
                 pass
         threading.Thread(target=_do, daemon=True).start()
-        self._lock_dot.config(fg='#4ec9b0')
+        self.status_label.config(text='Unlocking session...')
+        self._lock_dot.config(fg=ASK_HEADER_ACCENT)
         try:
             self._unlock_btn.pack_forget()
         except Exception:
@@ -1773,35 +1793,54 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                     ) as r:
                         data = _j.loads(r.read())
                     locked = data.get('locked', False)
+                    locked_secs = int(data.get('locked_secs') or 0)
                 except Exception:
                     locked = False
-                self.after(0, lambda: self._apply_lock_state(locked))
+                    locked_secs = 0
+                self.after(
+                    0,
+                    lambda: self._apply_lock_state(
+                        locked,
+                        locked_secs=locked_secs,
+                        force_unlock=locked,
+                    ),
+                )
             threading.Thread(target=_verify, daemon=True).start()
         else:
-            self._lock_dot.config(fg='#4ec9b0')
+            self._lock_dot.config(fg=ASK_HEADER_ACCENT)
 
-    def _apply_lock_state(self, locked: bool):
-        """Apply final lock state after processing completes."""
-        if locked:
-            self._lock_dot.config(fg='#f44747')   # red — stuck
+    def _apply_lock_state(self, locked: bool, locked_secs: int = 0, force_unlock: bool = False):
+        """Apply final lock state after processing completes or on restart."""
+        if locked and (force_unlock or locked_secs >= SESSION_LOCK_STALE_SECS):
+            self._lock_dot.config(fg='#f85149')   # red — stale/stuck
             try:
                 self._unlock_btn.pack(side=tk.RIGHT, padx=(0, 4))
             except Exception:
                 pass
-        else:
-            self._lock_dot.config(fg='#4ec9b0')   # green — healthy
+            self.status_label.config(text='Session locked — click Unlock')
+        elif locked:
+            self._lock_dot.config(fg='#d29922')   # yellow — active elsewhere
             try:
                 self._unlock_btn.pack_forget()
             except Exception:
                 pass
+            self.status_label.config(text='Session busy...')
+        else:
+            self._lock_dot.config(fg=ASK_HEADER_ACCENT)   # green — healthy
+            try:
+                self._unlock_btn.pack_forget()
+            except Exception:
+                pass
+            if self.status_label.cget('text') in ('Session locked — click Unlock', 'Session busy...', 'Unlocking session...'):
+                self.status_label.config(text='Ready')
 
     def _pulse_dot(self):
         """Animate dot between two greens while processing."""
         if not getattr(self, '_is_processing', False):
-            self._lock_dot.config(fg='#4ec9b0')   # settle to solid green
+            self._lock_dot.config(fg=ASK_HEADER_ACCENT)   # settle to solid green
             return
         current = self._lock_dot.cget('fg')
-        next_color = '#2a9a80' if current == '#4ec9b0' else '#4ec9b0'
+        next_color = ASK_HEADER_ACCENT_ACTIVE if current == ASK_HEADER_ACCENT else ASK_HEADER_ACCENT
         self._lock_dot.config(fg=next_color)
         self.after(600, self._pulse_dot)
     # Slash commands — must start at position 0 of the prompt.

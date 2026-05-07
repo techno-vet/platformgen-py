@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: comfyui-sd15-fp16-seed
+  namespace: genny-shared
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed-checkpoint
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - >
+              set -e;
+              mkdir -p /basedir/models/checkpoints;
+              rm -f /basedir/models/checkpoints/put_checkpoints_here;
+              wget -O /basedir/models/checkpoints/v1-5-pruned-emaonly-fp16.safetensors
+              https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors;
+              ls -lh /basedir/models/checkpoints/v1-5-pruned-emaonly-fp16.safetensors
+          volumeMounts:
+            - name: comfyui-basedir
+              mountPath: /basedir
+      volumes:
+        - name: comfyui-basedir
+          persistentVolumeClaim:
+            claimName: comfyui-basedir
