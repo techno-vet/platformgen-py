@@ -4,11 +4,17 @@ import signal
 import subprocess
 import time
 
-from auger.runtime import cli_name, state_dir
+from platformgen.runtime import cli_name, state_dir
 
 
 CLI_NAME = cli_name()
-PROCESS_MARKERS = (f"{CLI_NAME} start", "python3 -m auger start", "python -m auger start")
+PROCESS_MARKERS = (
+    f"{CLI_NAME} start",
+    "python3 -m platformgen start",
+    "python -m platformgen start",
+    "python3 -m auger start",
+    "python -m auger start",
+)
 
 for line in os.popen('ps aux').readlines():
     if any(marker in line for marker in PROCESS_MARKERS) and 'grep' not in line and 'restart' not in line:

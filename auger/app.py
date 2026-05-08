@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auger SRE Platform - Main Application
+PlatformGen - Main Application
 
 A self-building AI-powered desktop tool for Site Reliability Engineers.
 """
@@ -15,10 +15,10 @@ from tkinter import ttk, messagebox
 
 from auger.runtime import product_name, state_dir, window_class
 from auger.ui.content_area import ContentArea
-from auger.ui.ask_auger import AskAugerPanel
+from auger.ui.ask_genny import AskGennyPanel
 from auger.ui.hot_reload import HotReloader
 from auger.ui.first_run import maybe_show_wizard
-from auger.ui.status_bar import AugerStatusBar
+from auger.ui.status_bar import PlatformGenStatusBar
 from auger.ui.help_docs import DOCS_DIR as _DOCS_DIR, WIDGET_DOCS as _WIDGET_DOCS_RAW, GENERAL_DOCS as _GENERAL_DOCS
 
 # Adapt widget docs list to legacy 3-tuple format used by menu building code
@@ -45,7 +45,7 @@ def _activation_socket_path() -> Path:
 
 
 def _signal_existing_instance() -> bool:
-    """Ask an already-running Auger window to raise itself, if present."""
+    """Ask an already-running PlatformGen window to raise itself, if present."""
     socket_path = _activation_socket_path()
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
@@ -57,7 +57,7 @@ def _signal_existing_instance() -> bool:
         return False
 
 
-class AugerSREPlatform(tk.Tk):
+class PlatformGenApp(tk.Tk):
     """Main application window."""
     
     def __init__(self):
@@ -574,7 +574,7 @@ class AugerSREPlatform(tk.Tk):
             menubar.add_cascade(label="Help", menu=help_menu)
 
         help_menu.add_command(
-            label="What can Auger do?",
+            label="What can Genny do?",
             command=lambda: self.ask_auger.set_prompt("what widgets can you create for me?")
         )
         help_menu.add_separator()
@@ -611,7 +611,7 @@ class AugerSREPlatform(tk.Tk):
     def _build_layout(self):
         """Build main layout with vertical paned window."""
         # Status bar pinned to bottom
-        self.status_bar = AugerStatusBar(self)
+        self.status_bar = PlatformGenStatusBar(self)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Vertical paned window
@@ -622,11 +622,11 @@ class AugerSREPlatform(tk.Tk):
         self.content = ContentArea(paned)
         paned.add(self.content, weight=3)
         
-        # Bottom: Ask Auger panel
-        self.ask_auger = AskAugerPanel(paned, self.content)
+        # Bottom: Ask Genny panel
+        self.ask_auger = AskGennyPanel(paned, self.content)
         paned.add(self.ask_auger, weight=2)
 
-        # Wire self-healing: widget crash overlay → Ask Auger
+        # Wire self-healing: widget crash overlay → Ask Genny
         self.content._ask_auger_cb = self._on_widget_crash
         self.status_bar._content = self.content
     
@@ -649,11 +649,11 @@ class AugerSREPlatform(tk.Tk):
         self._show_info("New session (stub)")
     
     def _clear_chat(self):
-        """Clear Ask Auger chat."""
+        """Clear Ask Genny chat."""
         self.ask_auger._on_clear()
 
     def _on_widget_crash(self, widget_name: str, tb_str: str, source_path: str, source_snippet: str):
-        """Called by crash overlay 'Ask Auger to Fix' button. Pre-fills Ask Auger with a repair prompt."""
+        """Called by crash overlay 'Ask Genny to Fix' button. Pre-fills Ask Genny with a repair prompt."""
         prompt = (
             f"Widget '{widget_name}' crashed on load. Please diagnose and propose a fix.\n\n"
             f"## Traceback\n```\n{tb_str.strip()}\n```\n\n"
@@ -674,7 +674,7 @@ class AugerSREPlatform(tk.Tk):
         self.ask_auger.input_text.focus_set()
 
     def _handle_callback_exception(self, exc_type, exc_val, exc_tb):
-        """Override Tk's default handler to surface post-load widget exceptions via Ask Auger."""
+        """Override Tk's default handler to surface post-load widget exceptions via Ask Genny."""
         import traceback as _tb
         import inspect as _inspect
         import time as _time
@@ -725,7 +725,7 @@ class AugerSREPlatform(tk.Tk):
                         pass
                     break
 
-            # Build Ask Auger prompt and show a non-blocking banner
+            # Build Ask Genny prompt and show a non-blocking banner
             prompt = (
                 f"Widget '{widget_name}' raised an exception during a Tk callback "
                 f"(button click, timer, or event handler). Please diagnose and propose a fix.\n\n"
@@ -753,7 +753,7 @@ class AugerSREPlatform(tk.Tk):
         finally:
             self._in_exception_handler = False
 
-    def _show_crash_banner(self, widget_name: str, ask_auger_prompt: str):
+    def _show_crash_banner(self, widget_name: str, ask_genny_prompt: str):
         """Show a dismissible crash banner at the top of the content area."""
         import tkinter as _tk
 
@@ -766,11 +766,11 @@ class AugerSREPlatform(tk.Tk):
                   ).pack(side=_tk.LEFT)
 
         def _ask():
-            self.ask_auger.set_prompt(ask_auger_prompt)
+            self.ask_auger.set_prompt(ask_genny_prompt)
             self.ask_auger.input_text.focus_set()
             banner.destroy()
 
-        _tk.Button(banner, text='Ask Auger to Fix', font=('Segoe UI', 9, 'bold'),
+        _tk.Button(banner, text='Ask Genny to Fix', font=('Segoe UI', 9, 'bold'),
                    fg='#ffffff', bg='#0e639c', relief=_tk.FLAT, padx=6, pady=2,
                    cursor='hand2', command=_ask
                    ).pack(side=_tk.LEFT, padx=(0, 8))
@@ -791,7 +791,7 @@ class AugerSREPlatform(tk.Tk):
             "Widget Management\n\n"
             "• Widgets are Python files in ui/widgets/\n"
             "• They auto-load via hot reload (1 second scan)\n"
-            "• Ask Auger to generate new widgets\n"
+            "• Ask Genny to generate new widgets\n"
             "• Right-click tabs to close them\n\n"
             "Example prompts:\n"
             "  'create a service health monitor widget'\n"
@@ -802,10 +802,10 @@ class AugerSREPlatform(tk.Tk):
     def _show_about(self):
         """Show about dialog."""
         messagebox.showinfo(
-            "About Auger SRE Platform",
-            "Auger SRE Platform v1.0\n\n"
+            f"About {product_name()}",
+            f"{product_name()} v1.0\n\n"
             "A self-building AI-powered tool for Site Reliability Engineers.\n\n"
-            "Ask the Auger AI agent to generate custom widgets,\n"
+            "Ask the Genny AI agent to generate custom widgets,\n"
             "configure APIs, monitor services, and automate your SRE workflows.\n\n"
             "Built with Python + Tkinter + AI"
         )
@@ -895,7 +895,7 @@ class AugerSREPlatform(tk.Tk):
         threading.Thread(target=_serve, daemon=True).start()
 
     def _activate_window(self):
-        """Bring the existing Auger window to the foreground."""
+        """Bring the existing PlatformGen window to the foreground."""
         try:
             self.deiconify()
             self.update_idletasks()
@@ -936,12 +936,15 @@ class AugerSREPlatform(tk.Tk):
         self._stop_activation_listener()
         self.destroy()
 
+ 
+AugerSREPlatform = PlatformGenApp
+
 
 def main():
     """Main entry point."""
     if _signal_existing_instance():
         return
-    app = AugerSREPlatform()
+    app = PlatformGenApp()
     # Show first-run wizard if GHE_TOKEN is not configured
     maybe_show_wizard(app)
     app.mainloop()

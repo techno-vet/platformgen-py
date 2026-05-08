@@ -1,22 +1,23 @@
 #!/bin/bash
-# Post-install script to set up additional Auger utilities
+# Post-install script to set up additional PlatformGen utilities
 
-echo "[PKG] Setting up Auger utilities..."
+echo "[PKG] Setting up PlatformGen utilities..."
 
-# Install auger-ask to ~/.local/bin
+# Install standalone ask helpers to ~/.local/bin
 INSTALL_DIR="$HOME/.local/bin"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 mkdir -p "$INSTALL_DIR"
 
-# Copy auger-ask
-if [ -f "$SCRIPT_DIR/auger-ask" ]; then
-    cp "$SCRIPT_DIR/auger-ask" "$INSTALL_DIR/auger-ask"
-    chmod +x "$INSTALL_DIR/auger-ask"
-    echo "[OK] Installed auger-ask to $INSTALL_DIR/auger-ask"
-else
-    echo "[WARN]  Could not find auger-ask script"
-fi
+for script_name in ask-genny auger-ask; do
+    if [ -f "$SCRIPT_DIR/$script_name" ]; then
+        cp "$SCRIPT_DIR/$script_name" "$INSTALL_DIR/$script_name"
+        chmod +x "$INSTALL_DIR/$script_name"
+        echo "[OK] Installed $script_name to $INSTALL_DIR/$script_name"
+    else
+        echo "[WARN]  Could not find $script_name script"
+    fi
+done
 
 # Check if ~/.local/bin is in PATH
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
@@ -30,6 +31,9 @@ echo ""
 echo "[OK] Setup complete!"
 echo ""
 echo "Available commands:"
-echo "  auger           - Main Auger Platform CLI"
+echo "  platformgen     - Main PlatformGen CLI"
+echo "  genny           - Main Genny CLI"
+echo "  auger           - Legacy CLI compatibility alias"
 echo "  auger ask       - Ask Copilot (integrated)"
-echo "  auger-ask       - Ask Copilot (standalone)"
+echo "  ask-genny       - Ask Copilot (standalone)"
+echo "  auger-ask       - Legacy standalone compatibility alias"

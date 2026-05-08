@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auger SRE Platform — Install Wizard
+PlatformGen — Install Wizard
 
 Standalone Tk GUI for first-time setup. Runs on the host (no Docker required).
 
@@ -36,7 +36,7 @@ ENV_FILE     = AUGER_DIR / ".env"
 ENV_TEMPLATE = REPO_DIR / ".env.example"
 LAUNCH_SH    = SCRIPT_DIR / "platformgen-launch.sh"
 ART_REGISTRY = "artifactory.helix.gsa.gov"
-AUGER_IMAGE = f"{ART_REGISTRY}/gs-assist-docker-repo/auger-platform:20260311"
+RUNTIME_IMAGE = f"{ART_REGISTRY}/gs-assist-docker-repo/auger-platform:20260311"
 GHE_HOST = "github.helix.gsa.gov"
 GHE_URL = f"https://{GHE_HOST}"
 GHE_API_USER = f"{GHE_URL}/api/v3/user"
@@ -50,12 +50,12 @@ ASTUTL_CANDIDATES = [
     Path.home() / "repos" / "devtools-scripts-6.1" / "au-silver" / "config" / ".astutl" / "astutl_secure_config.env",
 ]
 
-# Maps astutl key name → Auger .env key name (+ optional display label for logging)
+# Maps astutl key name -> runtime .env key name (+ optional display label for logging)
 # "~" means "copy only if destination is not already set"
 ASTUTL_KEY_MAP = {
     # Artifactory
     "ARTIFACTORY_IDENTITY_TOKEN": "ARTIFACTORY_IDENTITY_TOKEN",
-    "ARTIFACTORY_USER":           "ARTIFACTORY_USERNAME",       # astutl uses _USER, Auger uses _USERNAME
+    "ARTIFACTORY_USER":           "ARTIFACTORY_USERNAME",       # astutl uses _USER, runtime uses _USERNAME
     "ARTIFACTORY_PASSWORD":       "ARTIFACTORY_PASSWORD",
     # GitHub / Copilot (github.com)
     "GH_TOKEN":                   "GH_TOKEN",
@@ -67,12 +67,12 @@ ASTUTL_KEY_MAP = {
     "JIRA_PAT":                   "JIRA_API_TOKEN",
     # Jenkins
     "JENKINS_API_KEY":            "JENKINS_API_TOKEN",
-    # DataDog  (astutl uses DD_*, Auger uses DATADOG_*)
+    # DataDog  (astutl uses DD_*, runtime uses DATADOG_*)
     "DD_API_KEY":                 "DATADOG_API_KEY",
     "DD_APP_KEY":                 "DATADOG_APP_KEY",
     # Rancher
     "RANCHER_BEARER_TOKEN":       "RANCHER_BEARER_TOKEN",
-    # AWS per-env buckets → Auger stores as AWS_1/2/3/4 slots
+    # AWS per-env buckets -> runtime stores as AWS_1/2/3/4 slots
     # DEV / TEST / STAGING / PROD → slots 1-4
     "DEV_S3_AWS_ACCESS_KEY_ID":       "AWS_1_ACCESS_KEY_ID",
     "DEV_S3_AWS_SECRET_ACCESS_KEY":   "AWS_1_SECRET_ACCESS_KEY",
@@ -90,7 +90,7 @@ ASTUTL_KEY_MAP = {
     "LOCAL_CRYPTKEEPER_KEY":    "LOCAL_CRYPTKEEPER_KEY",
 }
 
-# -- Theme (matches Auger dark theme) ------------------------------------------
+# -- Theme (matches the PlatformGen dark theme) --------------------------------
 BG     = "#1e1e1e"
 BG2    = "#2d2d2d"
 FG     = "#d4d4d4"
@@ -425,7 +425,7 @@ def _art_login_valid(user, key):
         if login.returncode != 0:
             return False
         inspect = subprocess.run(
-            ["docker", "manifest", "inspect", AUGER_IMAGE],
+            ["docker", "manifest", "inspect", RUNTIME_IMAGE],
             capture_output=True,
             timeout=30,
         )
@@ -520,7 +520,7 @@ def _install_host_copilot():
 
 
 def _choose_valid_art_secret(user, identity_token=""):
-    """Return the identity token if it can read the Auger image."""
+    """Return the identity token if it can read the runtime image."""
     if identity_token and _art_login_valid(user, identity_token):
         return identity_token, "Identity Token"
     return "", ""
@@ -568,7 +568,7 @@ def _detect_gh_token():
     # 1. Already saved
     tok = _read_env_key(ENV_FILE, "GH_TOKEN")
     if tok:
-        return tok, "~/.auger/.env"
+        return tok, "~/.platformgen/.env"
 
     # 2. gh CLI
     try:
@@ -610,7 +610,7 @@ def _detect_ghe_token():
     """Returns (token, source) — empty strings if nothing found."""
     tok = _read_env_key(ENV_FILE, "GHE_TOKEN")
     if tok:
-        return tok, "~/.auger/.env"
+        return tok, "~/.platformgen/.env"
 
     for var in ("GHE_TOKEN", "GH_ENTERPRISE_TOKEN"):
         val = os.environ.get(var, "")
@@ -656,7 +656,7 @@ def _find_astutl_file():
 
 def _import_from_astutl(astutl_path):
     """
-    Read astutl_secure_config.env and copy known keys to ~/.auger/.env.
+    Read astutl_secure_config.env and copy known keys to ~/.platformgen/.env.
     Only writes a key if the destination is not already set.
     Returns list of (auger_key, astutl_key) pairs that were imported.
     """
@@ -683,7 +683,7 @@ def _detect_art_creds():
     )
     it = _read_env_key(ENV_FILE, "ARTIFACTORY_IDENTITY_TOKEN") or os.environ.get("ARTIFACTORY_IDENTITY_TOKEN", "")
     if user and it:
-        return user, it, "~/.auger/.env / environment"
+        return user, it, "~/.platformgen/.env / environment"
 
     astutl = _find_astutl_file()
     if astutl:
@@ -702,12 +702,12 @@ def _run_setup(wiz):
     w = wiz
 
     w.log_line("")
-    w.log_line("  Auger SRE Platform — Setting up your environment", "bold")
+    w.log_line(f"  {APP_NAME} — Setting up your environment", "bold")
     w.log_line("")
 
     seeded_template = _seed_env_template()
     if seeded_template:
-        w.log_line("  Seeded ~/.auger/.env from .env.example so it can be pre-filled before onboarding.", "dim")
+        w.log_line("  Seeded ~/.platformgen/.env from .env.example so it can be pre-filled before onboarding.", "dim")
         w.log_line("")
 
     # Load GHE_URL from .env if set, otherwise use default
@@ -772,11 +772,11 @@ def _run_setup(wiz):
 
     while not gh_ok:
         w.log_line("")
-        w.log_line("  A github.com Fine-Grained Personal Access Token is required for Ask Auger.", "dim")
+        w.log_line(f"  A github.com Fine-Grained Personal Access Token is required for Ask {ASSISTANT_NAME}.", "dim")
         w.log_line("  1. Go to: https://github.com/settings/personal-access-tokens/new", "dim")
         w.log_line("  2. Click 'Generate new token (fine-grained)'", "dim")
         w.log_line("  3. Permission required: [OK] Copilot > Copilot requests (read-only)", "dim")
-        w.log_line("     (No other scopes needed for Ask Auger; classic PATs/ghp_ tokens will fail)", "dim")
+        w.log_line(f"     (No other scopes needed for Ask {ASSISTANT_NAME}; classic PATs/ghp_ tokens will fail)", "dim")
         w.open_link("Open Fine-Grained GitHub token page", "https://github.com/settings/personal-access-tokens/new")
         w.log_line("")
         tok = w.ask_secret(
@@ -785,12 +785,12 @@ def _run_setup(wiz):
             "https://github.com/settings/personal-access-tokens/new\n\n"
             "Required permission: Copilot > Copilot requests (read-only)\n\n"
             "Classic Personal Access Tokens (ghp_) are not supported by Copilot.\n\n"
-            "Leave blank to skip — Ask Auger won't work until GH_TOKEN is set.",
+            f"Leave blank to skip — Ask {ASSISTANT_NAME} won't work until GH_TOKEN is set.",
             title="GitHub Copilot Token",
         )
         if not tok:
-            w.log_line("  [WARN]  Skipped — Ask Auger will not function until GH_TOKEN is added.", "warn")
-            w.log_line("      Edit ~/.auger/.env to add it later.", "dim")
+            w.log_line(f"  [WARN]  Skipped — Ask {ASSISTANT_NAME} will not function until GH_TOKEN is added.", "warn")
+            w.log_line("      Edit ~/.platformgen/.env to add it later.", "dim")
             break
         w.log_inline("  Verifying… ")
         if _gh_token_valid(tok):
@@ -826,8 +826,8 @@ def _run_setup(wiz):
 
     while not ghe_ok:
         w.log_line("")
-        w.log_line(f"  A {GHE_HOST} token powers the GitHub widget, Prospector, and HTTPS git flows inside Auger.", "dim")
-        w.log_line("  If you cloned with VS Code or browser auth, Auger still needs a separate GHE token in ~/.auger/.env.", "dim")
+        w.log_line(f"  A {GHE_HOST} token powers the GitHub widget, Prospector, and HTTPS git flows inside {APP_NAME}.", "dim")
+        w.log_line(f"  If you cloned with VS Code or browser auth, {APP_NAME} still needs a separate GHE token in ~/.platformgen/.env.", "dim")
         w.log_line(f"  Get it at: {GHE_URL}/settings/tokens", "dim")
         w.log_line("  Recommended scopes: repo  read:user", "dim")
         w.open_link("Open Enterprise GitHub token page", f"{GHE_URL}/settings/tokens")
@@ -842,7 +842,7 @@ def _run_setup(wiz):
         )
         if not tok:
             w.log_line("  [WARN]  Skipped — GitHub Enterprise features will remain limited until GHE_TOKEN is added.", "warn")
-            w.log_line("      Edit ~/.auger/.env to add it later.", "dim")
+            w.log_line("      Edit ~/.platformgen/.env to add it later.", "dim")
             break
         w.log_inline(f"  Verifying against {GHE_HOST}… ")
         if _ghe_token_valid(tok):
@@ -858,15 +858,15 @@ def _run_setup(wiz):
     # =======================================================================
     # STEP 1c — Host auger CLI
     # =======================================================================
-    w.log_line("  -- Step 1c: Host Auger CLI ---------------------------", "h2")
-    w.set_status("Checking host auger CLI…")
+    w.log_line(f"  -- Step 1c: Host {APP_NAME} CLI ---------------------------", "h2")
+    w.set_status(f"Checking host {APP_NAME} CLI…")
 
     host_auger = _find_host_auger_bin()
     host_copilot = _find_host_copilot_bin()
     if host_auger:
-        w.log_line(f"  [OK]  Host auger CLI already available at {host_auger}", "ok")
+        w.log_line(f"  [OK]  Host {APP_NAME} CLI already available at {host_auger}", "ok")
     elif gh_ok:
-        w.log_line("  [PKG]  Installing host auger CLI so Ask Auger works from any terminal…", "dim")
+        w.log_line(f"  [PKG]  Installing host {APP_NAME} CLI so Ask {ASSISTANT_NAME} works from any terminal…", "dim")
         install_result = _install_host_auger()
         if isinstance(install_result, Exception):
             w.log_line(f"  [WARN]  Host auger install error: {install_result}", "warn")
@@ -874,24 +874,24 @@ def _run_setup(wiz):
         elif install_result.returncode == 0:
             host_auger = _find_host_auger_bin()
             if host_auger:
-                w.log_line(f"  [OK]  Host auger CLI installed at {host_auger}", "ok")
+                w.log_line(f"  [OK]  Host {APP_NAME} CLI installed at {host_auger}", "ok")
             else:
-                w.log_line("  [WARN]  pip reported success but ~/.local/bin/auger was not found", "warn")
+                w.log_line(f"  [WARN]  pip reported success but ~/.local/bin/{ASSISTANT_NAME.lower()} or platformgen was not found", "warn")
                 w.log_line("      Retry later with: python3 -m pip install --user --upgrade .", "dim")
         else:
             err = (install_result.stderr or install_result.stdout or "").strip()
-            w.log_line("  [WARN]  Host auger install failed — continuing with platform setup", "warn")
+            w.log_line(f"  [WARN]  Host {APP_NAME} install failed — continuing with platform setup", "warn")
             if err:
                 w.log_line(f"      {err.splitlines()[-1]}", "dim")
             w.log_line("      Retry later with: python3 -m pip install --user --upgrade .", "dim")
     else:
-        w.log_line("  [WARN]  Skipping host auger install because no valid GitHub token is configured yet.", "warn")
+        w.log_line(f"  [WARN]  Skipping host {APP_NAME} install because no valid GitHub token is configured yet.", "warn")
 
     host_auger = _find_host_auger_bin()
     if host_copilot:
         w.log_line(f"  [OK]  Host copilot CLI already available at {host_copilot}", "ok")
     elif host_auger:
-        w.log_line("  [PKG]  Installing standalone Copilot CLI required by terminal auger…", "dim")
+        w.log_line(f"  [PKG]  Installing standalone Copilot CLI required by terminal {APP_NAME.lower()}…", "dim")
         copilot_result = _install_host_copilot()
         if isinstance(copilot_result, Exception):
             w.log_line(f"  [WARN]  Host copilot install error: {copilot_result}", "warn")
@@ -905,12 +905,12 @@ def _run_setup(wiz):
                 w.log_line("      Retry later with: curl -fsSL https://gh.io/copilot-install | bash", "dim")
         else:
             err = (copilot_result.stderr or copilot_result.stdout or "").strip()
-            w.log_line("  [WARN]  Host copilot CLI install failed — terminal Ask Auger may not work yet", "warn")
+            w.log_line(f"  [WARN]  Host copilot CLI install failed — terminal Ask {ASSISTANT_NAME} may not work yet", "warn")
             if err:
                 w.log_line(f"      {err.splitlines()[-1]}", "dim")
             w.log_line("      Retry later with: curl -fsSL https://gh.io/copilot-install | bash", "dim")
     else:
-        w.log_line("  [WARN]  Skipping host copilot install until host auger CLI is available.", "warn")
+        w.log_line(f"  [WARN]  Skipping host copilot install until host {APP_NAME} CLI is available.", "warn")
 
     w.log_line("")
 
@@ -918,7 +918,7 @@ def _run_setup(wiz):
     # STEP 2 — Runtime mode
     # =======================================================================
     w.log_line("  -- Step 2: Runtime Mode ------------------------------", "h2")
-    w.set_status("Selecting Auger runtime...")
+    w.set_status(f"Selecting {APP_NAME} runtime...")
 
     docker_state, docker_detail = _docker_runtime_state()
     launch_mode = "venv"
@@ -950,23 +950,23 @@ def _run_setup(wiz):
     if launch_mode == "docker":
         w.log_line("")
         w.log_line("  -- Step 2b: SRE Base Image Strategy -----------------", "h2")
-        w.set_status("Preparing local Auger base image build...")
+        w.set_status(f"Preparing local {APP_NAME} base image build...")
 
         art_user, art_it, art_src = _detect_art_creds()
         if art_user and art_it and "astutl" in art_src:
             _set_env_key("ARTIFACTORY_USERNAME", art_user)
             _set_env_key("ARTIFACTORY_IDENTITY_TOKEN", art_it)
             w.log_line(f"  Found saved Artifactory credentials via {art_src}.", "dim")
-            w.log_line("  Credentials were copied into ~/.auger/.env for later non-installer launches.", "dim")
+            w.log_line("  Credentials were copied into ~/.platformgen/.env for later non-installer launches.", "dim")
         elif art_user and art_it:
             w.log_line(f"  Found saved Artifactory credentials via {art_src}.", "dim")
             w.log_line("  Keeping them available for later non-installer launches.", "dim")
         else:
             w.log_line("  No saved Artifactory Docker pull credentials detected.", "dim")
 
-        w.log_line("  [OK] Install Wizard will always build the Auger base image locally from this checkout.", "ok")
+        w.log_line(f"  [OK] Install Wizard will always build the {APP_NAME} base image locally from this checkout.", "ok")
         w.log_line("      This keeps your local test path aligned with what early adopters should validate from main.", "dim")
-        w.log_line("      If the local base image is already current for this checkout, auger-launch.sh will reuse it.", "dim")
+        w.log_line("      If the local base image is already current for this checkout, platformgen-launch.sh will reuse it.", "dim")
         w.log_line("      Otherwise it will rebuild locally at reduced CPU/I/O priority.", "dim")
     else:
         w.log_line(f"  Host mode uses {AUGER_DIR}/venv and launches {APP_NAME} directly on this machine.", "dim")
@@ -981,7 +981,7 @@ def _run_setup(wiz):
     w.set_status("Checking host pip dependencies…")
 
     _HOST_PIP_DEPS = [
-        ("faster_whisper", "faster-whisper", "voice transcription (Ask Auger mic input)"),
+        ("faster_whisper", "faster-whisper", f"voice transcription (Ask {ASSISTANT_NAME} mic input)"),
     ]
     for _import_name, _pip_name, _desc in _HOST_PIP_DEPS:
         try:
@@ -1063,10 +1063,10 @@ def _run_setup(wiz):
         try:
             if launch_mode == "docker":
                 r = subprocess.run(
-                    ["docker", "ps", "--filter", "name=auger-platform",
+                    ["docker", "ps", "--filter", "name=platformgen-platform",
                      "--format", "{{.Names}}"],
                     capture_output=True, text=True, timeout=5)
-                container_up = "auger-platform" in r.stdout
+                container_up = "platformgen-platform" in r.stdout
             else:
                 pid_file = AUGER_DIR / "venv-platform.pid"
                 if pid_file.exists():
@@ -1079,7 +1079,7 @@ def _run_setup(wiz):
         if launch_mode == "venv" and not host_up:
             try:
                 r = subprocess.run(
-                    ["pgrep", "-f", "python3 -m auger start"],
+                    ["pgrep", "-f", "python3 -m platformgen start|python -m platformgen start|python3 -m auger start|python -m auger start"],
                     capture_output=True, text=True, timeout=5)
                 host_up = bool(r.stdout.strip())
             except Exception:
@@ -1095,10 +1095,10 @@ def _run_setup(wiz):
         if success:
             w.log_line("")
             if launch_mode == "docker":
-                w.log_line("  [OK]  Auger SRE is running!", "ok")
+                w.log_line(f"  [OK]  {APP_NAME} SRE is running!", "ok")
                 w.log_line("  The platform window should now appear on your desktop.", "dim")
             else:
-                w.log_line("  [OK]  Auger host mode is running!", "ok")
+                w.log_line(f"  [OK]  {APP_NAME} host mode is running!", "ok")
                 w.log_line("  The host-mode window should now appear on your desktop.", "dim")
 
             # Verify daemon health
@@ -1112,17 +1112,17 @@ def _run_setup(wiz):
 
             # Verify tray applet
             try:
-                r2 = subprocess.run(["pgrep", "-f", "auger_tray.py"],
+                r2 = subprocess.run(["pgrep", "-f", "platformgen_tray.py|auger_tray.py"],
                                     capture_output=True, text=True, timeout=3)
                 if r2.stdout.strip():
                     w.log_line("  [OK]  System tray icon is running", "ok")
                 else:
-                    w.log_line("  [WARN]  Tray icon not detected — check ~/.auger/tray.log", "warn")
+                    w.log_line("  [WARN]  Tray icon not detected — check ~/.platformgen/tray.log", "warn")
             except Exception:
                 pass
 
             w.log_line("")
-            w.log_line("  [TIP] Ask Auger is ready — type any question into the Ask Auger panel.", "info")
+            w.log_line("  [TIP] Ask Genny is ready — type any question into the Ask Genny panel.", "info")
             w.log_line("  [TIP] Open the API Keys+ tab to configure additional integrations.", "info")
             w.log_line("  [TIP] Need help? Type: what can you do?", "info")
             
@@ -1136,9 +1136,9 @@ def _run_setup(wiz):
         else:
             w.log_line(f"  [ERROR]  Launch script exited with code {proc.returncode}", "err")
             if launch_mode == "docker":
-                w.log_line("  Run:  docker logs auger-platform  for details.", "dim")
+                w.log_line("  Run:  docker logs platformgen-platform  for details.", "dim")
             else:
-                w.log_line("  Run:  tail -100 ~/.auger/venv-platform.log  for details.", "dim")
+                w.log_line("  Run:  tail -100 ~/.platformgen/venv-platform.log  for details.", "dim")
             w.mark_done(success=False)
 
     except FileNotFoundError:
@@ -1160,7 +1160,7 @@ def main():
         print("Install it with:  sudo apt-get install -y python3-tk")
         print("")
         print("Falling back to the bash installer…")
-        bash_setup = SCRIPT_DIR / "auger-setup.sh"
+        bash_setup = SCRIPT_DIR / "platformgen-setup.sh"
         if bash_setup.exists():
             os.execv("/bin/bash", ["/bin/bash", str(bash_setup)])
         sys.exit(1)

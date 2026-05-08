@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-status_bar.py - Auger platform status bar.
+status_bar.py - PlatformGen status bar.
 
 Thin (~26 px) bar pinned to the bottom of the main window.
 Shows (left to right):
-    [Auger vX.Y.Z]  [branch @ sha]  [green up to date]  [whale tag]  [daemon green]  [EDT HH:MM]
+    [PlatformGen vX.Y.Z]  [branch @ sha]  [green up to date]  [whale tag]  [daemon green]  [EDT HH:MM]
 
 Thread-safety: all Tk mutations are queued via self._safe() and drained on the
 main thread by _poll_q(). Worker threads never call Tk directly.
@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 
-from auger.runtime import app_name, daemon_url, repo_dir
+from auger.runtime import app_name, daemon_url, repo_dir, state_dir
 
 try:
     from zoneinfo import ZoneInfo
@@ -52,11 +52,12 @@ def _git(repo, *args, timeout=8):
 
 
 def _get_version():
-    try:
-        from importlib.metadata import version as _iv
-        return _iv("auger-platform")
-    except Exception:
-        pass
+    from importlib.metadata import version as _iv
+    for package_name in ("platformgen-py", "auger-platform"):
+        try:
+            return _iv(package_name)
+        except Exception:
+            pass
     candidates = [r for r in [repo_dir(), Path.cwd()] if r]
     for c in candidates:
         try:
@@ -82,7 +83,7 @@ def _read_image_tag():
     import os
     tag = os.environ.get("AUGER_IMAGE_TAG", "")
     if not tag:
-        for p in [Path("/.docker-image-tag"), Path.home() / ".auger" / "image_tag"]:
+        for p in [Path("/.docker-image-tag"), state_dir() / "image_tag", Path.home() / ".auger" / "image_tag"]:
             try:
                 tag = p.read_text().strip()
                 if tag:
@@ -92,7 +93,7 @@ def _read_image_tag():
     return tag or "latest"
 
 
-class AugerStatusBar(tk.Frame):
+class PlatformGenStatusBar(tk.Frame):
     """
     Thin status bar pinned to the bottom of the main window.
 
@@ -281,3 +282,8 @@ class AugerStatusBar(tk.Frame):
             self._content.add_widget_tab("Artifactory", ArtifactoryWidget)
         except Exception as e:
             print(f"[status_bar] image click: {e}")
+
+
+AugerStatusBar = PlatformGenStatusBar
+
+__all__ = ["PlatformGenStatusBar", "AugerStatusBar"]

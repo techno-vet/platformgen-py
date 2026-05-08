@@ -127,7 +127,7 @@ def _build_context_preamble() -> str:
     - If the runtime session snapshot exists and is < 48h old: return
       compact snapshot (branch, tasks, last turns).
     - Otherwise (first run or long idle): return AUGER_BEHAVIOR.md as a
-      cold-start orientation so Auger is self-aware from day one.
+      cold-start orientation so Genny is self-aware from day one.
     """
     import json
     snap_path = state_dir() / '.session_snapshot.json'
@@ -549,7 +549,7 @@ def run_copilot_ask(prompt_text=None):
         from tkinter import scrolledtext
         
         root = tk.Tk()
-        root.title("Auger - Ask Copilot")
+        root.title(f"{assistant_name()} - Ask Copilot")
         root.geometry("600x400")
         
         frame = tk.Frame(root, padx=10, pady=10)
@@ -597,7 +597,7 @@ def run_copilot_ask(prompt_text=None):
             sys.exit(1)
 
 
-class AugerGroup(click.Group):
+class PlatformGenGroup(click.Group):
     """Custom Click group that implements dual-mode behavior"""
     
     def invoke(self, ctx):
@@ -618,7 +618,7 @@ class AugerGroup(click.Group):
         return super().invoke(ctx)
 
 
-@click.command(cls=AugerGroup)
+@click.command(cls=PlatformGenGroup)
 @click.version_option(version="0.1.0")
 @click.pass_context
 def main(ctx):
@@ -635,12 +635,12 @@ def main(ctx):
     and integrations with DataDog, GitHub, ServiceNow, and more.
     """
     # This gets called by Click's framework
-    # The actual routing is handled in AugerGroup.invoke()
+    # The actual routing is handled in PlatformGenGroup.invoke()
     pass
 
 
 # Wrapper to check for no-args case BEFORE Click processing
-def cli_main():
+def platformgen_main():
     """Entry point that handles no-args case before Click"""
     # Check if ~/.local/bin is in PATH (warn only once per session)
     local_bin = Path.home() / ".local" / "bin"
@@ -657,6 +657,19 @@ def cli_main():
     
     # Otherwise, let Click handle it
     main()
+
+
+def genny_main():
+    """Compatibility entry point for the canonical Genny CLI name."""
+    platformgen_main()
+
+
+def cli_main():
+    """Legacy Auger CLI compatibility entry point."""
+    platformgen_main()
+
+
+AugerGroup = PlatformGenGroup
 
 
 @main.command()
@@ -751,7 +764,10 @@ def start(port, display, debug, config_dir):
     
     # Import and run app
     try:
-        from auger.app import main as app_main
+        try:
+            from platformgen.app import main as app_main
+        except ImportError:
+            from auger.app import main as app_main
         app_main()
     except ImportError as e:
         click.echo(f"❌ Error importing app: {e}")
@@ -957,4 +973,4 @@ def doctor(config_dir):
 
 
 if __name__ == '__main__':
-    cli_main()
+    platformgen_main()

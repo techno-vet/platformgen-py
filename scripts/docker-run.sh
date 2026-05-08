@@ -1,9 +1,9 @@
 #!/bin/bash
-# Auger Platform - Docker Run
-# Starts the Auger Platform UI from any Docker-capable host.
+# PlatformGen - Docker Run
+# Starts the PlatformGen UI from any Docker-capable host.
 #
-# Tokens and API keys are read from $HOME/.auger/.env (shared with local pip install).
-# Copy .env.example to ~/.auger/.env and fill in your values before first run.
+# Tokens and API keys are read from $HOME/.platformgen/.env (shared with local pip install).
+# Copy .env.example to ~/.platformgen/.env and fill in your values before first run.
 #
 # Usage:
 #   ./scripts/docker-run.sh                    # use local image
@@ -14,12 +14,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ "$#" -eq 0 ]; then
-    exec bash "$SCRIPT_DIR/auger-launch.sh"
+    exec bash "$SCRIPT_DIR/platformgen-launch.sh"
 fi
 
 IMAGE="${1:-auger-platform:latest}"
 CONTAINER_NAME="auger-platform"
-AUGER_DIR="$HOME/.auger"
+AUGER_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
 
 # Canonical repo location: prefer ~/repos, fall back to script's own directory
 if [ -d "$HOME/repos/auger-ai-sre-platform" ]; then
@@ -68,18 +68,31 @@ if [ "$IMAGE" = "auger-platform:latest" ] && [ -f "$CANON_REPO/Dockerfile" ]; th
     fi
 fi
 
-# ─── Host: ensure auger CLI is available ──────────────────────────────────────
-if ! command -v auger &>/dev/null; then
-    if [ -f "$HOME/.local/bin/auger" ]; then
+# ─── Host: ensure PlatformGen CLI is available ───────────────────────────────
+_host_cli=""
+for _candidate in platformgen auger; do
+    if command -v "$_candidate" &>/dev/null; then
+        _host_cli="$_candidate"
+        break
+    fi
+done
+if [ -z "$_host_cli" ]; then
+    if [ -f "$HOME/.local/bin/platformgen" ] || [ -f "$HOME/.local/bin/auger" ]; then
         export PATH="$HOME/.local/bin:$PATH"
     fi
+    for _candidate in platformgen auger; do
+        if command -v "$_candidate" &>/dev/null; then
+            _host_cli="$_candidate"
+            break
+        fi
+    done
 fi
-if ! command -v auger &>/dev/null; then
+if [ -z "$_host_cli" ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  auger CLI not found on this host."
+    echo "  PlatformGen CLI not found on this host."
     echo "  The shared Copilot session (host ↔ container) requires"
-    echo "  auger to be installed on the host."
+    echo "  platformgen (or legacy auger) to be installed on the host."
     echo ""
     echo "  Install it now?"
     echo "  pip3 install --user auger-platform"
@@ -88,15 +101,15 @@ if ! command -v auger &>/dev/null; then
     echo ""
     read -r -p "  Auto-install with pip3? [y/N] " _ans
     if [[ "${_ans,,}" == "y" ]]; then
-        pip3 install --user auger-platform && echo "[OK] auger installed" || echo "[WARN]  Install failed — continuing without host auger"
+        pip3 install --user auger-platform && echo "[OK] PlatformGen CLI installed" || echo "[WARN]  Install failed — continuing without host CLI"
     else
-        echo "[WARN]  Skipping auger host install — Ask Auger host session won't be shared"
+        echo "[WARN]  Skipping host CLI install — Ask Genny host session won't be shared"
     fi
     echo ""
 fi
 
 # ─── Ensure config dir exists ─────────────────────────────────────────────────
-# Ensure ~/.auger exists (even with no .env — first-run wizard handles it)
+# Ensure ~/.platformgen exists (even with no .env — first-run wizard handles it)
 mkdir -p "$AUGER_DIR"
 if [ ! -f "$AUGER_DIR/.env" ]; then
     echo "[INFO]  No $AUGER_DIR/.env found — first-run setup wizard will appear on launch."
@@ -109,7 +122,7 @@ xhost +local:docker 2>/dev/null || true
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 
-echo "[START] Starting Auger Platform..."
+echo "[START] Starting PlatformGen..."
 echo "   Image  : $IMAGE"
 echo "   Display: $DISPLAY"
 echo "   Config : $AUGER_DIR"
@@ -217,28 +230,32 @@ echo "[OK] Container started, launching UI..."
 docker exec -d -u "$HOST_UID:$HOST_GID" \
     -e DISPLAY="${DISPLAY:-:1}" \
     -e PYTHONPATH="/home/auger/.auger/pypackages" \
-    "$CONTAINER_NAME" auger start
+    "$CONTAINER_NAME" sh -lc 'python3 -m platformgen start || auger start'
 
-echo "🖥️  Auger Platform UI is running. Close this terminal freely."
+echo "🖥️  PlatformGen UI is running. Close this terminal freely."
 echo "   Daemon log: $AUGER_DIR/daemon.log"
 echo "   To stop:    docker rm -f $CONTAINER_NAME"
 
 # ─── System Tray Applet ───────────────────────────────────────────────────────
 # Launches the host task tray for Open/Ask/Restart/Stop.
-DISPLAY="${DISPLAY:-:1}" bash "$SCRIPT_DIR/start-auger-tray.sh"
+DISPLAY="${DISPLAY:-:1}" bash "$SCRIPT_DIR/start-platformgen-tray.sh"
 
 # ─── GNOME .desktop launcher + dock icon ─────────────────────────────────────
 ICON_DIR="$HOME/.local/share/icons"
 DESKTOP_DIR="$HOME/.local/share/applications"
-ICON_PATH="$ICON_DIR/auger-platform.png"
-DESKTOP_FILE="$DESKTOP_DIR/auger-platform.desktop"
+ICON_PATH="$ICON_DIR/platformgen-platform.png"
+DESKTOP_FILE="$DESKTOP_DIR/platformgen-platform.desktop"
 mkdir -p "$ICON_DIR" "$DESKTOP_DIR"
+rm -f "$DESKTOP_DIR/auger-platform.desktop"
 
 python3 -c "
 import sys
 sys.path.insert(0, '${REPO_DIR}')
 try:
-    from auger.ui.icons import install_app_icon
+    try:
+        from platformgen.ui.icons import install_app_icon
+    except ImportError:
+        from auger.ui.icons import install_app_icon
     path = install_app_icon('${ICON_PATH}')
     print('[OK] App icon saved:', path)
 except Exception as e:
@@ -249,15 +266,15 @@ cat > "$DESKTOP_FILE" <<DESKTOP
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Auger Platform
+Name=PlatformGen
 GenericName=SRE Platform
-Comment=Drill Down With Auger [INSTALL]
-Exec=bash ${SCRIPT_DIR}/auger-launch.sh
+Comment=Drill Down With Genny [INSTALL]
+Exec=bash ${SCRIPT_DIR}/platformgen-launch.sh
 Icon=${ICON_PATH}
 Terminal=false
 Categories=Development;System;
-StartupWMClass=Auger-platform
-Keywords=auger;sre;devops;kubernetes;
+StartupWMClass=platformgen-platform
+Keywords=platformgen;genny;sre;devops;kubernetes;
 DESKTOP
 
 chmod +x "$DESKTOP_FILE"
@@ -266,18 +283,19 @@ echo "[OK] GNOME launcher installed: $DESKTOP_FILE"
 
 # ─── GNOME tray autostart — survive workspace reboot ──────────────────────────
 AUTOSTART_DIR="$HOME/.config/autostart"
-AUTOSTART_FILE="$AUTOSTART_DIR/auger-task-tray.desktop"
+AUTOSTART_FILE="$AUTOSTART_DIR/platformgen-task-tray.desktop"
 mkdir -p "$AUTOSTART_DIR"
 rm -f "$AUTOSTART_DIR/auger-platform.desktop"
+rm -f "$AUTOSTART_DIR/auger-task-tray.desktop"
 cat > "$AUTOSTART_FILE" <<AUTOSTART
 [Desktop Entry]
 Type=Application
-Name=Auger Task Tray
-Comment=Start Auger task tray on login
-Exec=bash ${SCRIPT_DIR}/start-auger-tray.sh
+Name=PlatformGen Task Tray
+Comment=Start PlatformGen task tray on login
+Exec=bash ${SCRIPT_DIR}/start-platformgen-tray.sh
 Icon=${ICON_PATH}
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 AUTOSTART
-echo "[OK] Tray autostart registered — Auger task tray will start after workspace reboot"
+echo "[OK] Tray autostart registered — PlatformGen task tray will start after workspace reboot"

@@ -841,7 +841,7 @@ def stream_restart_platform(cmd: dict, write_line):
 
 def stream_restart_auger(cmd: dict, write_line):
     """Stop and restart the Docker runtime container (full restart).
-    The daemon stays running — auger-launch.sh is NOT used here because it
+    The daemon stays running — platformgen-launch.sh is NOT used here because it
     would try to start a second daemon on port 7437 while this one is live.
     Uses the personalized image when available and keeps host UID/GID mapping."""
     docker_bin = _find_bin('docker')
@@ -1080,8 +1080,8 @@ def _build_context_preamble() -> str:
     """Return context preamble to inject before every copilot prompt.
 
     Warm start (snapshot < 48h): compact snapshot (branch, tasks, last turns).
-    Cold start (no snapshot / stale): AUGER_BEHAVIOR.md orientation so Auger
-    is self-aware from day one on a fresh SRE install.
+    Cold start (no snapshot / stale): AUGER_BEHAVIOR.md orientation so Genny
+    is self-aware from day one on a fresh PlatformGen install.
     """
     snap_path = AUGER_DIR / '.session_snapshot.json'
     snap = None
@@ -1912,7 +1912,7 @@ def handle_open_path(cmd: dict) -> dict:
 
 
 def handle_launch_wizard(cmd: dict) -> dict:
-    """Launch the Auger install wizard (install_wizard.py) on the host desktop.
+    """Launch the PlatformGen install wizard (install_wizard.py) on the host desktop.
 
     The wizard is a standalone Tk window — it must run on the host (not inside
     the container) so it can reach the host X11 display directly.

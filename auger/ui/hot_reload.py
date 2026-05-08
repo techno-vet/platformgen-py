@@ -34,7 +34,7 @@ class HotReloader:
         _src = Path(watch_dir).resolve().parent.parent.parent / 'auger' / 'ui' / 'widgets'
         self._src_watch_dir = _src if _src.exists() and _src.resolve() != self.watch_dir.resolve() else None
 
-        # Watch the parent ui/ directory for non-widget files (e.g. ask_auger.py).
+        # Watch the parent ui/ directory for non-widget files (e.g. ask_genny.py).
         # Callbacks receive (path, module) same as for widgets.
         _ui_baked = self.watch_dir.parent          # auger_baked/ui/
         _ui_src   = _src.parent if _src.exists() else None  # auger/ui/
@@ -153,7 +153,7 @@ class HotReloader:
                 except Exception as e:
                     print(f"Error checking {path}: {e}")
 
-        # Check ui/ parent dir for non-widget files (ask_auger.py, etc.)
+        # Check ui/ parent dir for non-widget files (ask_genny.py, etc.)
         # Use a deduped set of already-seen resolved inodes to avoid double-firing
         # when baked/ and src/ point to the same inode.
         seen_inodes: set = set()
@@ -191,7 +191,7 @@ class HotReloader:
                     print(f"Error checking ui/{path.name}: {e}")
     
     def _reload_ui_module(self, path):
-        """Reload or import a ui-level module (e.g. auger.ui.ask_auger)."""
+        """Reload or import a ui-level module (e.g. auger.ui.ask_genny)."""
         try:
             if 'auger.ui' not in sys.modules:
                 import auger.ui

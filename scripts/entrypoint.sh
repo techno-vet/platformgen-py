@@ -1,8 +1,8 @@
 #!/bin/bash
-# Auger Platform - Container Entrypoint
+# PlatformGen - Container Entrypoint
 # Auto-initializes auger config if not already done.
 #
-# Option A (user-specific image): The container image is built by auger-launch.sh
+# Option A (user-specific image): The container image is built by platformgen-launch.sh
 # with the host user's uid/gid baked in via Dockerfile.user. AUGER_HOST_HOME is
 # set in the image ENV so all paths resolve correctly — no uid mismatch, no
 # Permission Denied errors on shared mounts.
@@ -58,9 +58,9 @@ fi
 TOKEN="${COPILOT_GITHUB_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-${GHE_TOKEN}}}}"
 
 if [ ! -f "$AUGER_CONFIG" ] && [ -n "$TOKEN" ]; then
-    echo "Initializing Auger configuration..."
+    echo "Initializing PlatformGen configuration..."
     auger init --token "$TOKEN" 2>/dev/null || true
-    echo "Auger initialized"
+    echo "PlatformGen initialized"
 fi
 
 # ── Ensure shared files exist and are writable ────────────────────────────────
