@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simple startup progress window for Auger host-side launches."""
+"""Simple startup progress window for PlatformGen host-side launches."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class StartupProgressWindow:
         self.root.attributes("-topmost", True)
         self.root.resizable(True, True)
 
-        self.status_var = tk.StringVar(value="Starting Auger...")
+        self.status_var = tk.StringVar(value="Starting PlatformGen...")
         self._last_text = ""
         self._done_seen = False
         self._error_seen = False
@@ -35,7 +35,7 @@ class StartupProgressWindow:
 
         tk.Label(
             self.root,
-            text="Auger startup",
+            text="PlatformGen startup",
             bg=bg,
             fg=accent,
             font=("Segoe UI", 14, "bold"),
@@ -79,10 +79,10 @@ class StartupProgressWindow:
 
     def _read_log(self) -> tuple[str, str, bool, bool]:
         if not self.log_file.exists():
-            return "", "Starting Auger...", False, False
+            return "", "Starting PlatformGen...", False, False
 
         raw = self.log_file.read_text(errors="replace")
-        status = "Starting Auger..."
+        status = "Starting PlatformGen..."
         visible_lines: list[str] = []
         done_seen = False
         error_seen = False
@@ -132,9 +132,9 @@ class StartupProgressWindow:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Show Auger startup progress")
+    parser = argparse.ArgumentParser(description="Show PlatformGen startup progress")
     parser.add_argument("--log-file", required=True, help="Path to startup progress log")
-    parser.add_argument("--title", default="Auger Startup", help="Window title")
+    parser.add_argument("--title", default="PlatformGen Startup", help="Window title")
     args = parser.parse_args()
 
     StartupProgressWindow(Path(args.log_file), args.title).run()

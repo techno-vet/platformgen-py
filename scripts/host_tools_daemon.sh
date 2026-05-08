@@ -1,9 +1,9 @@
 #!/bin/bash
-AUGER_DIR="$HOME/.auger"
+AUGER_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
 HOST_CMD_FILE="$AUGER_DIR/.host_cmd"
 HOST_RESULT_FILE="$AUGER_DIR/.host_cmd_result"
 HOST_TOOLS_FILE="$AUGER_DIR/host_tools.json"
-CONTAINER_NAME="auger-platform"
+CONTAINER_NAME="${AUGER_CONTAINER_NAME:-platformgen-platform}"
 BROWSER_BIN=$(command -v google-chrome google-chrome-stable 2>/dev/null | head -1)
 
 while docker inspect "$CONTAINER_NAME" &>/dev/null; do

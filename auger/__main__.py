@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auger Platform Main Entry Point
+PlatformGen main entry point.
 Allows running: python -m auger
 """
 

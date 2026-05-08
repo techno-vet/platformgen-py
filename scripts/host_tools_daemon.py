@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Auger Host Tools HTTP Daemon
+PlatformGen Host Tools HTTP Daemon
 Runs on the host machine, accepts JSON commands from the Docker container.
 
 Since the container uses --network host, both host and container share
 localhost, so the daemon is reachable at http://localhost:7437 from anywhere.
 
 Usage:
-    nohup python3 scripts/host_tools_daemon.py > ~/.auger/daemon.log 2>&1 &
+    nohup python3 scripts/host_tools_daemon.py > ~/.platformgen/daemon.log 2>&1 &
 
 Endpoints:
     GET  /health      -> {"status":"ok","port":7437}
@@ -59,20 +59,22 @@ from auger.ai.providers import (
 
 PORT = int(os.environ.get('AUGER_DAEMON_PORT', '7437'))
 AUGER_DIR = Path(
-    os.environ.get('AUGER_HOME')
-    or os.environ.get('PLATFORMGEN_HOME')
-    or str(Path.home() / '.auger')
+    os.environ.get('PLATFORMGEN_HOME')
+    or os.environ.get('AUGER_HOME')
+    or str(Path.home() / '.platformgen')
 ).expanduser()
 HOST_TOOLS_FILE = AUGER_DIR / 'host_tools.json'
 REPO_DIR = Path(__file__).parent.parent  # scripts/../ = repo root
 KEEPALIVE_STATE_FILE = AUGER_DIR / 'keepalive_state.json'
-APP_NAME = os.environ.get('AUGER_APP_NAME', 'Auger')
+APP_NAME = os.environ.get('AUGER_APP_NAME', 'PlatformGen')
 KEEPALIVE_REASON = f'Keep Workspace Awake from {APP_NAME} tray'
-KEEPALIVE_APP_ID = os.environ.get('AUGER_CLI_NAME', 'auger')
+KEEPALIVE_APP_ID = os.environ.get('AUGER_CLI_NAME', 'genny')
 KEEPALIVE_INHIBIT_FLAGS = 'idle:suspend'
 KEEPALIVE_LOCK = threading.Lock()
 ACTIVE_COPILOT_LOCK = threading.Lock()
 ACTIVE_COPILOT: dict[str, object] = {}
+STATE_DIR_LABEL = str(AUGER_DIR)
+SELENIUM_VENV_DIR = AUGER_DIR / 'sn_venv'
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────
@@ -714,14 +716,14 @@ def stream_servicenow_login(cmd: dict, write_line):
     venv_python = _find_selenium_python()
     if not venv_python:
         write_line({
-            'type': 'error',
-            'message': (
-                'No Python with selenium found.\n'
-                'Fix: pip install selenium webdriver-manager in ~/.auger/sn_venv\n'
-                'Run: python3 -m venv ~/.auger/sn_venv && '
-                '~/.auger/sn_venv/bin/pip install selenium webdriver-manager'
-            )
-        })
+                'type': 'error',
+                'message': (
+                    'No Python with selenium found.\n'
+                    f'Fix: pip install selenium webdriver-manager in {SELENIUM_VENV_DIR}\n'
+                    f'Run: python3 -m venv {SELENIUM_VENV_DIR} && '
+                    f'{SELENIUM_VENV_DIR}/bin/pip install selenium webdriver-manager'
+                )
+            })
         return
 
     write_line({'type': 'progress', 'message': '[NET] Opening Chrome on host for ServiceNow login...'})
@@ -741,7 +743,7 @@ def stream_servicenow_login(cmd: dict, write_line):
         proc.wait(timeout=660)
         if proc.returncode == 0:
             write_line({'type': 'done', 'status': 'ok',
-                        'message': '[OK] Login complete — cookies saved to ~/.auger/.env'})
+                        'message': f'[OK] Login complete — cookies saved to {AUGER_DIR / ".env"}'})
         else:
             write_line({'type': 'error',
                         'message': f'Login script exited with code {proc.returncode}'})
@@ -762,14 +764,14 @@ def stream_jira_login(cmd: dict, write_line):
     venv_python = _find_selenium_python()
     if not venv_python:
         write_line({
-            'type': 'error',
-            'message': (
-                'No Python with selenium found.\n'
-                'Fix: pip install selenium webdriver-manager in ~/.auger/sn_venv\n'
-                'Run: python3 -m venv ~/.auger/sn_venv && '
-                '~/.auger/sn_venv/bin/pip install selenium webdriver-manager'
-            )
-        })
+                'type': 'error',
+                'message': (
+                    'No Python with selenium found.\n'
+                    f'Fix: pip install selenium webdriver-manager in {SELENIUM_VENV_DIR}\n'
+                    f'Run: python3 -m venv {SELENIUM_VENV_DIR} && '
+                    f'{SELENIUM_VENV_DIR}/bin/pip install selenium webdriver-manager'
+                )
+            })
         return
 
     write_line({'type': 'progress', 'message': '[NET] Opening Chrome on host for Jira login...'})
@@ -788,7 +790,7 @@ def stream_jira_login(cmd: dict, write_line):
         proc.wait(timeout=660)
         if proc.returncode == 0:
             write_line({'type': 'done', 'status': 'ok',
-                        'message': '[OK] Jira login complete — cookies saved to ~/.auger/.env'})
+                        'message': f'[OK] Jira login complete — cookies saved to {AUGER_DIR / ".env"}'})
         else:
             write_line({'type': 'error',
                         'message': f'Login script exited with code {proc.returncode}'})
@@ -827,10 +829,10 @@ def _find_selenium_python() -> str:
     return py if os.path.isfile(py) else ''
 
 
-# ── Host-scope actions: restart / rebuild Auger container ─────────────────────
+# ── Host-scope actions: restart / rebuild Docker runtime ──────────────────────
 
 def stream_restart_platform(cmd: dict, write_line):
-    """Restart the Auger UI. Delegates to stream_restart_auger since the
+    """Restart the PlatformGen UI. Delegates to stream_restart_auger since the
     daemon runs on the host and is unaffected by container restarts.
     docker restart is NOT used — it triggers a Tk segfault (exit 139) on
     some platforms because the graceful SIGTERM path isn't crash-safe."""
@@ -838,11 +840,10 @@ def stream_restart_platform(cmd: dict, write_line):
 
 
 def stream_restart_auger(cmd: dict, write_line):
-    """Stop and restart the auger-platform container (full restart).
+    """Stop and restart the Docker runtime container (full restart).
     The daemon stays running — auger-launch.sh is NOT used here because it
     would try to start a second daemon on port 7437 while this one is live.
-    Always uses the personalized image (auger-platform-<safe_user>:latest)
-    and the host user's UID/GID — never the legacy 'auger' user."""
+    Uses the personalized image when available and keeps host UID/GID mapping."""
     docker_bin = _find_bin('docker')
     if not docker_bin:
         write_line({'type': 'error', 'message': 'docker not found on host'})
@@ -850,13 +851,13 @@ def stream_restart_auger(cmd: dict, write_line):
 
     import os, time, re as _re
     display = os.environ.get('DISPLAY', ':0')
-    container = 'auger-platform'
+    container = os.environ.get('AUGER_CONTAINER_NAME', 'platformgen-platform')
 
     # Derive safe username (strip domain, replace non-alphanumeric with -)
     _raw_user = os.environ.get('USER', 'auger')
     _safe_user = _re.sub(r'[^a-zA-Z0-9]+', '-', _raw_user.split('@')[0]).rstrip('-')
     _host_home = str(Path.home())
-    _auger_dir = str(Path.home() / '.auger')
+    _auger_dir = str(AUGER_DIR)
     _container_home = f'/home/{_safe_user}'
 
     # Pick personalized image if it exists, else fall back to base image
@@ -876,7 +877,7 @@ def stream_restart_auger(cmd: dict, write_line):
         _user_arg = 'auger'
         _container_home = '/home/auger'
 
-    write_line({'type': 'progress', 'message': f'🔄 Restarting Auger container ({_image})...'})
+    write_line({'type': 'progress', 'message': f'🔄 Restarting {APP_NAME} Docker runtime ({_image})...'})
     try:
         # Stop existing container
         subprocess.run([docker_bin, 'rm', '-f', container], capture_output=True)
@@ -959,14 +960,14 @@ def stream_restart_auger(cmd: dict, write_line):
 
         write_line({'type': 'progress', 'message': '  ✓ Container started'})
         write_line({'type': 'done', 'status': 'ok',
-                    'message': '[OK] Auger restarted (daemon still running)'})
+                    'message': f'[OK] {APP_NAME} Docker runtime restarted (daemon still running)'})
     except Exception as e:
         write_line({'type': 'error', 'message': str(e)})
 
 
 def stream_rebuild_auger(cmd: dict, write_line):
-    """Rebuild the auger-platform Docker image then restart."""
-    write_line({'type': 'progress', 'message': '🔨 Rebuilding Auger image (this takes a few minutes)...'})
+    """Rebuild the Docker image then restart the runtime."""
+    write_line({'type': 'progress', 'message': f'🔨 Rebuilding {APP_NAME} image (this takes a few minutes)...'})
     try:
         import os as _os
         env = _os.environ.copy()
@@ -1000,7 +1001,7 @@ def stream_rebuild_auger(cmd: dict, write_line):
 # ── Session Snapshot helpers (Layer 1 + 2) ────────────────────────────────────
 
 def _write_session_snapshot(user_prompt: str, response_lines: list) -> None:
-    """Write ~/.auger/.session_snapshot.json after every copilot call."""
+    """Write the session snapshot after every Copilot call."""
     import sqlite3 as _sq3
     snap: dict = {'ts': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
     try:
@@ -1144,7 +1145,7 @@ def _build_context_preamble() -> str:
 def stream_ask_copilot(cmd: dict, write_line):
     """Run copilot on the host with session locking + pinned session ID.
     Serializes all requests so concurrent calls never corrupt events.jsonl.
-    Streams output back as NDJSON and appends to ~/.auger/chat_history.jsonl."""
+    Streams output back as NDJSON and appends to the shared chat history."""
     import fcntl, time
     import uuid
 
@@ -1153,7 +1154,7 @@ def stream_ask_copilot(cmd: dict, write_line):
         write_line({'type': 'error', 'message': 'No prompt provided'})
         return
 
-    # Build env, loading ~/.auger/.env
+    # Build env, loading the runtime .env file
     env = os.environ.copy()
     env_file = AUGER_DIR / '.env'
     if env_file.exists():
@@ -1672,7 +1673,7 @@ def _docker_login_artifactory() -> tuple:
                  env_vars.get('ARTIFACTORY_PASSWORD') or
                  os.environ.get('ARTIFACTORY_IDENTITY_TOKEN', ''))
     if not registry or not username or not password:
-        return False, 'Missing ARTIFACTORY_URL/USERNAME/IDENTITY_TOKEN in ~/.auger/.env'
+        return False, f'Missing ARTIFACTORY_URL/USERNAME/IDENTITY_TOKEN in {AUGER_DIR / ".env"}'
     docker_bin = _find_bin('docker')
     if not docker_bin:
         return False, 'docker not found on host PATH'
@@ -1991,7 +1992,7 @@ def _build_hotwords() -> str:
     except Exception:
         pass
 
-    # User-defined hotwords from ~/.auger/config.yaml
+    # User-defined hotwords from the runtime config.yaml
     try:
         import yaml as _yaml
         user_cfg = AUGER_DIR / 'config.yaml'
@@ -2013,7 +2014,7 @@ def _build_hotwords() -> str:
 
 
 def _apply_voice_corrections(text: str) -> str:
-    """Fix common Whisper mishearings of Auger-specific terms."""
+    """Fix common Whisper mishearings of product-specific terms."""
     result = text
     for wrong, right in _VOICE_CORRECTIONS.items():
         import re as _re
@@ -2067,7 +2068,7 @@ def handle_listen(cmd: dict) -> dict:
                 str(_voice_wav),
                 beam_size=5,
                 hotwords=hotwords,
-                initial_prompt=f"Auger SRE platform. {hotwords[:200]}",
+                initial_prompt=f"{APP_NAME} platform. {hotwords[:200]}",
             )
             transcript = ' '.join(s.text.strip() for s in segments).strip()
             transcript = _apply_voice_corrections(transcript)
@@ -2295,7 +2296,7 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
         """Shared NDJSON streaming helper over a normal response body.
 
         We intentionally avoid manual chunked transfer encoding here. Some host
-        Python/http client combinations used by Ask Auger receive an empty reply
+        Python/http client combinations used by Ask Genny receive an empty reply
         when this daemon hand-rolls `Transfer-Encoding: chunked`. Plain NDJSON
         lines flushed over a standard response are sufficient for both the panel
         and curl, with EOF delimiting the stream.
@@ -2345,11 +2346,11 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             # /schedule_restart — responds immediately, then restarts after `delay` seconds.
-            # Safe to call from inside Ask Auger: response is delivered before restart fires.
+            # Safe to call from inside Ask Genny: response is delivered before restart fires.
             # Body: {"delay": 5, "message": "optional user-facing message"}
             if self.path == '/schedule_restart':
                 delay = int(cmd.get('delay', 5))
-                msg = cmd.get('message', f'Restarting Auger platform in {delay}s…')
+                msg = cmd.get('message', f'Restarting {APP_NAME} in {delay}s…')
                 import threading as _threading
                 def _delayed():
                     import time as _time
@@ -2439,7 +2440,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def main():
     AUGER_DIR.mkdir(parents=True, exist_ok=True)
-    print(f'[NET] Auger Host Tools Daemon v2 (HTTP)')
+    print(f'[NET] {APP_NAME} Host Tools Daemon v2 (HTTP)')
     print(f'   Port:    {PORT}')
     print(f'   Browser: {BROWSER_BIN or "not found"}')
     print(f'   Tools:   {HOST_TOOLS_FILE}')

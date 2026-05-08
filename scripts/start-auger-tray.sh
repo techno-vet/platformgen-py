@@ -1,10 +1,10 @@
 #!/bin/bash
-# Start the Auger host tools daemon (if needed) and the host task tray.
+# Start the PlatformGen host tools daemon (if needed) and the host task tray.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUGER_DIR="${AUGER_HOME:-${AUGER_DIR:-$HOME/.auger}}"
+AUGER_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-${AUGER_DIR:-$HOME/.platformgen}}}"
 TRAY_SCRIPT="$SCRIPT_DIR/auger_tray.py"
 DAEMON_SCRIPT="$SCRIPT_DIR/host_tools_daemon.py"
 HOST_PYTHON="/usr/bin/python3"
@@ -50,7 +50,7 @@ if [ -f "$DAEMON_SCRIPT" ] && ! curl -sf --noproxy localhost "http://localhost:$
 fi
 
 if [ ! -f "$TRAY_SCRIPT" ]; then
-    echo "[INFO]  auger_tray.py not found — skipping system tray icon"
+    echo "[INFO]  tray script not found — skipping system tray icon"
     exit 0
 fi
 

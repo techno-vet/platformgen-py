@@ -4,30 +4,38 @@ import os
 from pathlib import Path
 
 
+def _env(*keys: str, default: str = "") -> str:
+    for key in keys:
+        value = os.environ.get(key)
+        if value:
+            return value
+    return default
+
+
 def state_dir() -> Path:
-    configured = os.environ.get("AUGER_HOME") or os.environ.get("PLATFORMGEN_HOME")
-    return Path(configured).expanduser() if configured else Path.home() / ".auger"
+    configured = _env("PLATFORMGEN_HOME", "AUGER_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".platformgen"
 
 
 def app_name() -> str:
-    return os.environ.get("AUGER_APP_NAME", "Auger")
+    return _env("PLATFORMGEN_APP_NAME", "AUGER_APP_NAME", default="PlatformGen")
 
 
 def product_name() -> str:
-    return os.environ.get("AUGER_PRODUCT_NAME", f"{app_name()} Platform")
+    return _env("PLATFORMGEN_PRODUCT_NAME", "AUGER_PRODUCT_NAME", default=app_name())
 
 
 def assistant_name() -> str:
-    return os.environ.get("AUGER_ASSISTANT_NAME", app_name())
+    return _env("PLATFORMGEN_ASSISTANT_NAME", "AUGER_ASSISTANT_NAME", default="Genny")
 
 
 def cli_name() -> str:
-    return os.environ.get("AUGER_CLI_NAME", "auger")
+    return _env("PLATFORMGEN_CLI_NAME", "AUGER_CLI_NAME", default="genny")
 
 
 def daemon_port() -> int:
     try:
-        return int(os.environ.get("AUGER_DAEMON_PORT", "7437"))
+        return int(_env("PLATFORMGEN_DAEMON_PORT", "AUGER_DAEMON_PORT", default="7437"))
     except ValueError:
         return 7437
 
@@ -37,11 +45,11 @@ def daemon_url() -> str:
 
 
 def window_class() -> str:
-    return os.environ.get("AUGER_WM_CLASS", "auger-platform")
+    return _env("PLATFORMGEN_WM_CLASS", "AUGER_WM_CLASS", default="platformgen-platform")
 
 
 def repo_dir() -> Path | None:
-    configured = os.environ.get("AUGER_REPO_DIR")
+    configured = _env("PLATFORMGEN_REPO_DIR", "AUGER_REPO_DIR")
     if configured:
         path = Path(configured).expanduser()
         if (path / ".git").exists():
@@ -50,6 +58,7 @@ def repo_dir() -> Path | None:
         Path(__file__).resolve().parents[1],
         Path.cwd(),
         Path.home() / "projects" / "platformgen-py",
+        Path.home() / "repos" / "platformgen-py",
         Path.home() / "repos" / "auger-ai-sre-platform",
     ]:
         if (candidate / ".git").exists():

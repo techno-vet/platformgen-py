@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Auger Platform System Tray Applet
+PlatformGen system tray applet
 Runs on the HOST machine (not inside the Docker container).
 
 Provides a GNOME status-area icon with:
   - Green/red indicator based on daemon health (:7437/health)
-  - Open Auger Platform (bring window to front)
-  - Quick Ask Auger... (floating prompt → streams response)
-  - Restart Auger Platform
-  - Stop Auger Platform
-  - Quit Tray (removes icon, leaves Auger running)
+  - Open PlatformGen (bring window to front)
+  - Quick Ask Genny... (floating prompt -> streams response)
+  - Restart PlatformGen
+  - Stop PlatformGen
+  - Quit Tray (removes icon, leaves the runtime running)
 
 Requirements (host):
   pip3 install --user pystray pillow
@@ -79,19 +79,28 @@ try:
     import pystray
     from PIL import Image, ImageDraw
 except ImportError:
-    print("[auger_tray] ERROR: pystray or pillow not installed.")
+    print("[platformgen_tray] ERROR: pystray or pillow not installed.")
     print("  pip3 install --user pystray pillow")
     sys.exit(1)
 
-APP_NAME = os.environ.get("AUGER_APP_NAME", "Auger")
-PRODUCT_NAME = os.environ.get("AUGER_PRODUCT_NAME", f"{APP_NAME} Platform")
-ASSISTANT_NAME = os.environ.get("AUGER_ASSISTANT_NAME", APP_NAME)
-CLI_NAME = os.environ.get("AUGER_CLI_NAME", "auger")
+APP_NAME = os.environ.get("AUGER_APP_NAME", "PlatformGen")
+PRODUCT_NAME = os.environ.get("AUGER_PRODUCT_NAME", APP_NAME)
+ASSISTANT_NAME = os.environ.get("AUGER_ASSISTANT_NAME", "Genny")
+CLI_NAME = os.environ.get("AUGER_CLI_NAME", "genny")
 DAEMON_URL = f"http://localhost:{os.environ.get('AUGER_DAEMON_PORT', '7437')}"
 POLL_INTERVAL = 10   # seconds between health checks
-CONTAINER_NAME = os.environ.get("AUGER_CONTAINER_NAME", "auger-platform")
-STATE_DIR = Path(os.environ.get("AUGER_HOME", str(Path.home() / ".auger"))).expanduser()
+CONTAINER_NAME = os.environ.get("AUGER_CONTAINER_NAME", "platformgen-platform")
+STATE_DIR = Path(
+    os.environ.get("PLATFORMGEN_HOME")
+    or os.environ.get("AUGER_HOME")
+    or str(Path.home() / ".platformgen")
+).expanduser()
 HOST_VENV_PID_FILE = STATE_DIR / "venv-platform.pid"
+HOST_PROCESS_PATTERNS = (
+    "python3 -m auger start",
+    "python -m auger start",
+    f"{CLI_NAME} start",
+)
 
 # Image used for update checks.  Override via env var for local dev.
 IMAGE = os.environ.get(
@@ -99,8 +108,15 @@ IMAGE = os.environ.get(
     "artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:latest",
 )
 SCRIPT_DIR = Path(__file__).resolve().parent
-# Script that starts the container (used after an image update or when tray starts Auger)
-LAUNCH_SCRIPT = os.environ.get("AUGER_LAUNCHER_SCRIPT", str(SCRIPT_DIR / "auger-launch.sh"))
+# Script that starts the runtime (used after an image update or when tray starts PlatformGen)
+LAUNCH_SCRIPT = os.environ.get("AUGER_LAUNCHER_SCRIPT", str(SCRIPT_DIR / "platformgen-launch.sh"))
+TRAY_TITLE_BASE = f"{PRODUCT_NAME} — Ask {ASSISTANT_NAME}"
+HOST_RUNTIME_LABEL = PRODUCT_NAME
+DOCKER_RUNTIME_LABEL = f"{PRODUCT_NAME} Docker Runtime"
+
+
+def _tray_title(message: str = "") -> str:
+    return f"{TRAY_TITLE_BASE} ({message})" if message else TRAY_TITLE_BASE
 
 # ── Icon generation ───────────────────────────────────────────────────────────
 
@@ -252,11 +268,14 @@ def _host_platform_running() -> bool:
     except Exception:
         pass
     try:
-        r = subprocess.run(
-            ["pgrep", "-f", "python3 -m auger start"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return bool(r.stdout.strip())
+        for pattern in HOST_PROCESS_PATTERNS:
+            r = subprocess.run(
+                ["pgrep", "-f", pattern],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.stdout.strip():
+                return True
+        return False
     except Exception:
         return False
 
@@ -271,14 +290,15 @@ def _stop_host_platform_processes() -> None:
     except Exception:
         pass
     try:
-        r = subprocess.run(
-            ["pgrep", "-f", "python3 -m auger start"],
-            capture_output=True, text=True, timeout=5,
-        )
-        for raw in r.stdout.splitlines():
-            pid = raw.strip()
-            if pid:
-                subprocess.run(["kill", pid], capture_output=True, timeout=5)
+        for pattern in HOST_PROCESS_PATTERNS:
+            r = subprocess.run(
+                ["pgrep", "-f", pattern],
+                capture_output=True, text=True, timeout=5,
+            )
+            for raw in r.stdout.splitlines():
+                pid = raw.strip()
+                if pid:
+                    subprocess.run(["kill", pid], capture_output=True, timeout=5)
     except Exception:
         pass
 
@@ -316,9 +336,9 @@ def _keepalive_enabled(item=None) -> bool:
 # ── Quick Ask popup ───────────────────────────────────────────────────────────
 
 def _open_quick_ask():
-    """Open a small floating Tk window for Quick Ask Auger."""
+    """Open a small floating Tk window for Quick Ask Genny."""
     if not _HAS_TK:
-        print("[auger_tray] Tk not available — cannot open Quick Ask")
+        print("[platformgen_tray] Tk not available — cannot open Quick Ask")
         return
 
     def _run_popup():
@@ -536,10 +556,10 @@ def _check_for_update(icon, item):
 def _headless_update_check():
     status, detail = _pull_image()
     msgs = {
-        "up_to_date":  "[auger_tray] Image is up to date.",
-        "updated":     "[auger_tray] New image pulled — restart Auger to apply.",
-        "unreachable": f"[auger_tray] Artifactory unreachable: {detail}",
-        "error":       f"[auger_tray] Update check failed: {detail}",
+        "up_to_date":  "[platformgen_tray] Image is up to date.",
+        "updated":     f"[platformgen_tray] New image pulled — restart {PRODUCT_NAME} to apply.",
+        "unreachable": f"[platformgen_tray] Artifactory unreachable: {detail}",
+        "error":       f"[platformgen_tray] Update check failed: {detail}",
     }
     print(msgs.get(status, status))
 
@@ -547,7 +567,7 @@ def _headless_update_check():
 def _update_dialog(icon):
     """Show a small Tk dialog that runs docker pull and reports the result."""
     root = tk.Tk()
-    root.title("Auger Platform — Check for Update")
+    root.title(f"{PRODUCT_NAME} — Check for Update")
     root.geometry("440x200")
     root.resizable(False, False)
     root.attributes("-topmost", True)
@@ -566,7 +586,7 @@ def _update_dialog(icon):
     except Exception:
         pass
 
-    tk.Label(root, text="🔄 Auger Platform Update Check", bg=BG, fg=GREEN,
+    tk.Label(root, text=f"🔄 {PRODUCT_NAME} Update Check", bg=BG, fg=GREEN,
              font=("Segoe UI", 13, "bold")).pack(pady=(14, 2))
 
     img_label = tk.Label(root, text=f"Image: {IMAGE}", bg=BG, fg="#888888",
@@ -608,7 +628,7 @@ def _update_dialog(icon):
             status_lbl.configure(fg=GREEN)
             close_btn.pack(side=tk.LEFT, padx=6)
         elif status == "updated":
-            status_var.set("🆕  New image downloaded! Restart Auger to apply.")
+            status_var.set(f"🆕  New image downloaded! Restart {PRODUCT_NAME} to apply.")
             status_lbl.configure(fg=GREEN)
             restart_btn.pack(side=tk.LEFT, padx=6)
             close_btn.pack(side=tk.LEFT, padx=6)
@@ -632,27 +652,27 @@ def _update_dialog(icon):
 def _restart_with_new_image(icon):
     """Stop the container and re-launch using the freshly-pulled image."""
     icon.icon  = DRILL_YELLOW
-    icon.title = "Auger Platform — Drill Down With Auger (Restarting Auger SRE with new image…)"
+    icon.title = _tray_title(f"Restarting {DOCKER_RUNTIME_LABEL} with new image…")
     try:
         subprocess.run(["docker", "rm", "-f", CONTAINER_NAME],
                        capture_output=True, timeout=15)
         subprocess.Popen(["bash", LAUNCH_SCRIPT])
         time.sleep(12)
     except Exception as e:
-        print(f"[auger_tray] Restart failed: {e}")
+        print(f"[platformgen_tray] Restart failed: {e}")
     _refresh_status(icon)
 
 
-# ── Auger control actions ─────────────────────────────────────────────────────
+# ── Runtime control actions ───────────────────────────────────────────────────
 
 def _open_host_auger(icon, item):
-    """Launch the host/venv Auger runtime if it is not already running."""
+    """Launch the host/venv PlatformGen runtime if it is not already running."""
     def _worker():
         icon.icon = DRILL_YELLOW
         if _host_platform_running():
-            icon.title = "Auger Platform — Drill Down With Auger (Auger Platform already running)"
+            icon.title = _tray_title(f"{HOST_RUNTIME_LABEL} already running")
         else:
-            icon.title = "Auger Platform — Drill Down With Auger (Starting Auger Platform…)"
+            icon.title = _tray_title(f"Starting {HOST_RUNTIME_LABEL}…")
             _launch_host_platform()
         time.sleep(3)
         _refresh_status(icon)
@@ -661,16 +681,16 @@ def _open_host_auger(icon, item):
 
 
 def _open_sre_auger(icon, item):
-    """Bring the Docker/SRE Auger window to front, or start it if stopped."""
+    """Bring the Docker runtime window to front, or start it if stopped."""
     def _worker():
         if _container_running():
             icon.icon = DRILL_YELLOW
-            icon.title = "Auger Platform — Drill Down With Auger (Opening existing Auger SRE window…)"
+            icon.title = _tray_title(f"Opening existing {DOCKER_RUNTIME_LABEL} window…")
             if not _activate_existing_platform():
                 _launch_platform()
         else:
             icon.icon = DRILL_YELLOW
-            icon.title = "Auger Platform — Drill Down With Auger (Starting Auger SRE…)"
+            icon.title = _tray_title(f"Starting {DOCKER_RUNTIME_LABEL}…")
             _launch_platform()
         time.sleep(5)
         _refresh_status(icon)
@@ -684,12 +704,12 @@ def _quick_ask(icon, item):
 
 def _toggle_keepalive(icon, item):
     icon.icon = DRILL_YELLOW
-    icon.title = "Auger Platform — Drill Down With Auger (Toggling keepalive…)"
+    icon.title = _tray_title("Toggling keepalive…")
 
     def _worker():
         current = _keepalive_status()
         if current.get("status") != "ok":
-            icon.title = "Auger Platform — Drill Down With Auger (Keepalive unavailable)"
+            icon.title = _tray_title("Keepalive unavailable")
             _refresh_status(icon)
             try:
                 icon.update_menu()
@@ -706,10 +726,10 @@ def _toggle_keepalive(icon, item):
 
         if result.get("status") == "ok":
             state = "enabled" if result.get("enabled") else "disabled"
-            icon.title = f"Auger Platform — Drill Down With Auger (Keepalive {state})"
+            icon.title = _tray_title(f"Keepalive {state}")
         else:
-            icon.title = "Auger Platform — Drill Down With Auger (Keepalive toggle failed)"
-            print(f"[auger_tray] Keepalive toggle failed: {result.get('message') or raw}")
+            icon.title = _tray_title("Keepalive toggle failed")
+            print(f"[platformgen_tray] Keepalive toggle failed: {result.get('message') or raw}")
 
         time.sleep(1)
         _refresh_status(icon)
@@ -722,9 +742,9 @@ def _toggle_keepalive(icon, item):
 
 
 def _restart_host_auger(icon, item):
-    """Restart the host/venv Auger runtime."""
+    """Restart the host/venv PlatformGen runtime."""
     icon.icon = DRILL_YELLOW
-    icon.title = "Auger Platform — Drill Down With Auger (Restarting Auger Platform…)"
+    icon.title = _tray_title(f"Restarting {HOST_RUNTIME_LABEL}…")
 
     def _worker():
         _stop_host_platform_processes()
@@ -736,13 +756,13 @@ def _restart_host_auger(icon, item):
 
 
 def _restart_auger(icon, item):
-    """Restart Auger SRE platform UI only — daemon stays running."""
+    """Restart the Docker runtime UI only — daemon stays running."""
     icon.icon = DRILL_YELLOW
-    icon.title = "Auger Platform — Drill Down With Auger (Restarting Auger SRE…)"
+    icon.title = _tray_title(f"Restarting {DOCKER_RUNTIME_LABEL}…")
 
     def _worker():
         if not _personalized_image_present():
-            icon.title = "Auger Platform — Rebuilding personalized image…"
+            icon.title = _tray_title("Rebuilding personalized image…")
             _launch_platform()
         elif _container_running():
             _post("/restart_platform", {})
@@ -764,7 +784,7 @@ def _restart_daemon(icon, item):
     Never do both — that races two new processes for port 7437.
     """
     icon.icon = DRILL_YELLOW
-    icon.title = "Auger Platform — Drill Down With Auger (Restarting Daemon…)"
+    icon.title = _tray_title("Restarting daemon…")
 
     def _worker():
         daemon_script = SCRIPT_DIR / "host_tools_daemon.py"
@@ -800,13 +820,13 @@ def _restart_daemon(icon, item):
 
 
 def _full_restart_auger(icon, item):
-    """Full restart: Auger SRE container + daemon."""
+    """Full restart: Docker runtime plus host daemon."""
     icon.icon = DRILL_YELLOW
-    icon.title = "Auger Platform — Drill Down With Auger (Full Restart Auger SRE…)"
+    icon.title = _tray_title(f"Full restart {DOCKER_RUNTIME_LABEL}…")
 
     def _worker():
         if not _personalized_image_present():
-            icon.title = "Auger Platform — Rebuilding personalized image…"
+            icon.title = _tray_title("Rebuilding personalized image…")
             _launch_platform()
         elif _daemon_healthy():
             _post("/restart_daemon", {}, timeout=5)
@@ -833,9 +853,9 @@ def _stop_auger(icon, item):
     subprocess.Popen(["docker", "rm", "-f", CONTAINER_NAME])
     icon.icon = DRILL_YELLOW if _daemon_healthy() else ICON_RED
     if _daemon_healthy():
-        icon.title = "Auger Platform — Drill Down With Auger (Tray ready — Auger SRE stopped)"
+        icon.title = _tray_title(f"Tray ready — {DOCKER_RUNTIME_LABEL} stopped")
     else:
-        icon.title = "Auger Platform — Drill Down With Auger (Stopped)"
+        icon.title = _tray_title("Stopped")
 
 
 def _quit_tray(icon, item):
@@ -850,19 +870,19 @@ def _refresh_status(icon):
     sre_running = _container_running()
     if daemon_ok and host_running and sre_running:
         icon.icon  = DRILL_GREEN
-        icon.title = "Auger Platform — Drill Down With Auger (Auger Platform + SRE running)"
+        icon.title = _tray_title(f"{HOST_RUNTIME_LABEL} + {DOCKER_RUNTIME_LABEL} running")
     elif daemon_ok and host_running:
         icon.icon  = DRILL_GREEN
-        icon.title = "Auger Platform — Drill Down With Auger (Auger Platform running)"
+        icon.title = _tray_title(f"{HOST_RUNTIME_LABEL} running")
     elif daemon_ok and sre_running:
         icon.icon  = DRILL_GREEN
-        icon.title = "Auger Platform — Drill Down With Auger (Auger SRE running)"
+        icon.title = _tray_title(f"{DOCKER_RUNTIME_LABEL} running")
     elif daemon_ok:
         icon.icon  = DRILL_YELLOW
-        icon.title = "Auger Platform — Drill Down With Auger (Tray ready — platforms stopped)"
+        icon.title = _tray_title("Tray ready — runtimes stopped")
     else:
         icon.icon  = DRILL_RED
-        icon.title = "Auger Platform — Drill Down With Auger (Daemon unavailable)"
+        icon.title = _tray_title("Daemon unavailable")
 
 
 def _poll_loop(icon):
@@ -875,20 +895,20 @@ def _poll_loop(icon):
 
 def main():
     menu_items = [
-        pystray.MenuItem("[START] Open Auger Platform",      _open_host_auger, default=True),
-        pystray.MenuItem("🔄 Restart Auger Platform",   _restart_host_auger),
-        pystray.MenuItem("⏹  Stop Auger Platform",      _stop_host_auger),
+        pystray.MenuItem(f"[START] Open {HOST_RUNTIME_LABEL}", _open_host_auger, default=True),
+        pystray.MenuItem(f"🔄 Restart {HOST_RUNTIME_LABEL}", _restart_host_auger),
+        pystray.MenuItem(f"⏹  Stop {HOST_RUNTIME_LABEL}", _stop_host_auger),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("💬 Quick Ask Auger…",        _quick_ask),
+        pystray.MenuItem(f"💬 Quick Ask {ASSISTANT_NAME}…", _quick_ask),
         pystray.MenuItem("☕ Keep Workspace Awake",    _toggle_keepalive, checked=_keepalive_enabled),
         pystray.Menu.SEPARATOR,
     ]
     if _docker_command_available():
         menu_items.extend([
-            pystray.MenuItem("🐳 Open Auger SRE",              _open_sre_auger),
-            pystray.MenuItem("🔄 Restart Auger SRE",           _restart_auger),
-            pystray.MenuItem("⚙️  Full Restart SRE (+ Daemon)", _full_restart_auger),
-            pystray.MenuItem("⏹  Stop Auger SRE",              _stop_auger),
+            pystray.MenuItem(f"🐳 Open {DOCKER_RUNTIME_LABEL}", _open_sre_auger),
+            pystray.MenuItem(f"🔄 Restart {DOCKER_RUNTIME_LABEL}", _restart_auger),
+            pystray.MenuItem("⚙️  Full Restart Docker Runtime (+ Daemon)", _full_restart_auger),
+            pystray.MenuItem(f"⏹  Stop {DOCKER_RUNTIME_LABEL}", _stop_auger),
             pystray.MenuItem("🆕 Check for Update…",           _check_for_update),
             pystray.Menu.SEPARATOR,
         ])
@@ -901,9 +921,9 @@ def main():
 
     # Start with yellow (connecting) then poll immediately
     icon = pystray.Icon(
-        name="auger",
+        name="platformgen",
         icon=DRILL_YELLOW,
-        title="Auger Platform — Drill Down With Auger",
+        title=TRAY_TITLE_BASE,
         menu=menu,
     )
 
