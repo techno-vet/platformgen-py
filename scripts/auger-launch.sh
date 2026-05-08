@@ -78,19 +78,23 @@ docker_usable() {
 }
 
 install_desktop_launchers() {
-    local icon_dir desktop_dir autostart_dir icon_path
+    local icon_dir desktop_dir autostart_dir icon_path default_icon_path
     local host_desktop_file sre_desktop_file autostart_file
 
     icon_dir="$HOME/.local/share/icons"
     desktop_dir="$HOME/.local/share/applications"
     autostart_dir="$HOME/.config/autostart"
-    icon_path="$icon_dir/${DESKTOP_SLUG}-platform.png"
+    default_icon_path="$icon_dir/${DESKTOP_SLUG}-platform.png"
+    icon_path="${AUGER_ICON_PATH:-$default_icon_path}"
     host_desktop_file="$desktop_dir/${DESKTOP_SLUG}.desktop"
     sre_desktop_file="$desktop_dir/${DESKTOP_SLUG}-platform.desktop"
     autostart_file="$autostart_dir/${DESKTOP_SLUG}-task-tray.desktop"
 
     mkdir -p "$icon_dir" "$desktop_dir" "$autostart_dir"
     rm -f "$autostart_dir/${DESKTOP_SLUG}-platform.desktop"
+    if [ "$icon_path" != "$default_icon_path" ]; then
+        rm -f "$default_icon_path"
+    fi
 
     python3 -c "
 import sys

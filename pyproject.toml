@@ -71,7 +71,7 @@ platformgen = "auger.cli:cli_main"
 genny = "auger.cli:cli_main"
 
 [tool.setuptools]
-packages = ["auger", "auger.ui", "auger.ui.widgets", "auger.ui.agents", "auger.tools", "auger.integrations", "auger.data"]
+packages = ["auger", "auger.ai", "auger.ui", "auger.ui.widgets", "auger.ui.agents", "auger.tools", "auger.integrations", "auger.data"]
 
 [tool.setuptools.package-data]
 auger = [

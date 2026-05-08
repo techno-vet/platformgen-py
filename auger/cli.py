@@ -11,6 +11,12 @@ import os
 import sys
 import click
 from pathlib import Path
+from auger.ai.provider_sessions import (
+    clear_copilot_pinned_session_id,
+    copilot_pin_path,
+    read_copilot_pinned_session_id,
+    write_copilot_pinned_session_id,
+)
 from auger.runtime import app_name, assistant_name, cli_name, product_name, state_dir
 
 
@@ -253,9 +259,14 @@ def run_copilot_ask(prompt_text=None):
                 pass
             except Exception:
                 pass
-        session_id_file = state_dir() / '.session_id'
-        pinned_session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
+        selected_provider = (env.get('AUGER_ASK_PROVIDER') or 'copilot').strip().lower() or 'copilot'
         selected_model = (env.get('AUGER_COPILOT_MODEL') or 'auto').strip() or 'auto'
+        if selected_provider != 'copilot':
+            click.echo(f'Ask {assistant_name()} local fallback only supports the Copilot provider right now.')
+            import sys as _sys_provider
+            _sys_provider.exit(1)
+        session_id_file = copilot_pin_path(selected_model)
+        pinned_session_id = read_copilot_pinned_session_id(selected_model) or None
         model_args = ['--model', selected_model] if selected_model.lower() != 'auto' else []
         requested_mode = (env.get('AUGER_COPILOT_SESSION_MODE') or 'pinned').strip().lower()
         requested_session_id = (env.get('AUGER_COPILOT_SESSION_ID') or '').strip()
@@ -311,7 +322,7 @@ def run_copilot_ask(prompt_text=None):
             session_args = ['--resume', session_id] if session_id else ['--continue']
 
         if session_mode == 'pinned' and session_id and _session_is_corrupt(session_id):
-            session_id_file.unlink(missing_ok=True)
+            clear_copilot_pinned_session_id(selected_model)
             session_id = None
             session_args = ['--continue']
             print(
@@ -422,11 +433,11 @@ def run_copilot_ask(prompt_text=None):
                             # Keep a forensic copy of the bad pin and start fresh once.
                             try:
                                 import time as _time_recover
-                                bad_pin = session_id_file.with_name(f'.session_id.bad-{int(_time_recover.time())}')
+                                bad_pin = session_id_file.with_name(f'{session_id_file.stem}.bad-{int(_time_recover.time())}{session_id_file.suffix}')
                                 session_id_file.rename(bad_pin)
                             except Exception:
                                 try:
-                                    session_id_file.unlink(missing_ok=True)
+                                    clear_copilot_pinned_session_id(selected_model)
                                 except Exception:
                                     pass
                             session_id = None
@@ -480,7 +491,7 @@ def run_copilot_ask(prompt_text=None):
                                 '\n❌  Copilot still failing after auto-retry.\n'
                                 '    Run this once in a terminal, then retry your prompt:\n'
                                 '      copilot auth login\n'
-                                f'    Session pin file: {state_dir() / ".session_id"}',
+                                f'    Session pin file: {copilot_pin_path(selected_model)}',
                                 flush=True
                             )
                         elif any(m in _lower_out for m in _session_protocol_markers):
@@ -503,7 +514,7 @@ def run_copilot_ask(prompt_text=None):
                                     reverse=True,
                                 )
                                 if dirs and session_mode == 'pinned':
-                                    session_id_file.write_text(dirs[0].name)
+                                    write_copilot_pinned_session_id(selected_model, dirs[0].name)
                         except Exception:
                             pass
                     # ── end auto-recovery ────────────────────────────────────

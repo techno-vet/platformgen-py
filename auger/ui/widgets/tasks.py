@@ -463,7 +463,6 @@ class TasksWidget(tk.Frame):
 
     def _setup_style(self):
         style = ttk.Style()
-        style.theme_use('default')
         style.configure('Tasks.Treeview',
                         background=BG2, foreground=FG,
                         fieldbackground=BG2, rowheight=24,

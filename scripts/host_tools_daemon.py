@@ -28,7 +28,34 @@ import threading
 import time
 import traceback
 import signal
+import urllib.error
+import urllib.request
 from pathlib import Path
+
+from auger.ai.provider_sessions import (
+    append_local_turn,
+    clear_copilot_pinned_session_id,
+    clear_local_pinned_session,
+    copilot_pin_path,
+    ensure_local_session,
+    read_copilot_pinned_session_id,
+    read_local_pinned_session_id,
+    session_messages,
+    write_copilot_pinned_session_id,
+)
+from auger.ai.providers import (
+    PROVIDER_COPILOT,
+    PROVIDER_OLLAMA,
+    PROVIDER_OPENAI,
+    available_models,
+    default_model,
+    load_runtime_env,
+    normalize_model,
+    normalize_provider,
+    ollama_base_url,
+    openai_base_url,
+    provider_supports_copilot_sessions,
+)
 
 PORT = int(os.environ.get('AUGER_DAEMON_PORT', '7437'))
 AUGER_DIR = Path(
@@ -129,22 +156,24 @@ def _clear_lock_metadata(lock_path: Path):
 
 
 def _register_active_copilot(
-    process: subprocess.Popen,
+    process: subprocess.Popen | None,
     *,
     request_id: str,
     prompt: str,
     session_mode: str,
     session_id: str | None,
     model: str,
+    provider: str,
 ) -> dict[str, object]:
     state: dict[str, object] = {
         'request_id': request_id,
-        'pid': process.pid,
         'process': process,
+        'pid': process.pid if process else 0,
         'prompt': prompt[:200],
         'session_mode': session_mode,
         'session_id': session_id or '',
         'model': model,
+        'provider': provider,
         'started_at': time.time(),
         'cancel_requested': False,
     }
@@ -159,7 +188,10 @@ def _active_copilot_snapshot() -> dict[str, object]:
         if not ACTIVE_COPILOT:
             return {}
         proc = ACTIVE_COPILOT.get('process')
-        active = bool(proc and getattr(proc, 'poll', lambda: 0)() is None)
+        if proc is None:
+            active = True
+        else:
+            active = bool(getattr(proc, 'poll', lambda: 0)() is None)
         return {
             key: value
             for key, value in ACTIVE_COPILOT.items()
@@ -205,7 +237,9 @@ def _interrupt_process_gracefully(proc: subprocess.Popen) -> str:
 def handle_cancel_ask(cmd: dict) -> dict:
     with ACTIVE_COPILOT_LOCK:
         proc = ACTIVE_COPILOT.get('process')
-        if not proc or getattr(proc, 'poll', lambda: 0)() is not None:
+        if not ACTIVE_COPILOT:
+            return {'status': 'ok', 'message': 'No active Ask Genny request'}
+        if proc is not None and getattr(proc, 'poll', lambda: 0)() is not None:
             ACTIVE_COPILOT.clear()
             return {'status': 'ok', 'message': 'No active Ask Genny request'}
         if ACTIVE_COPILOT.get('cancel_requested'):
@@ -218,15 +252,17 @@ def handle_cancel_ask(cmd: dict) -> dict:
         ACTIVE_COPILOT['cancel_requested'] = True
         ACTIVE_COPILOT['cancel_requested_at'] = time.time()
         request_id = str(ACTIVE_COPILOT.get('request_id') or '')
-        pid = proc.pid
+        pid = proc.pid if proc else 0
+        provider = str(ACTIVE_COPILOT.get('provider') or PROVIDER_COPILOT)
 
-    signal_used = _interrupt_process_gracefully(proc)
+    signal_used = _interrupt_process_gracefully(proc) if proc else 'local-cancel'
     return {
         'status': 'ok',
         'message': 'Cancel requested',
         'pid': pid,
         'request_id': request_id,
         'signal': signal_used,
+        'provider': provider,
     }
 
 
@@ -1135,9 +1171,9 @@ def stream_ask_copilot(cmd: dict, write_line):
         env['GH_TOKEN'] = token
         env['GITHUB_TOKEN'] = token
 
-    session_id_file = AUGER_DIR / '.session_id'
-    pinned_session_id = session_id_file.read_text().strip() if session_id_file.exists() else None
     selected_model = str(cmd.get('model') or 'auto').strip() or 'auto'
+    session_id_file = copilot_pin_path(selected_model)
+    pinned_session_id = read_copilot_pinned_session_id(selected_model) or None
     model_args = ['--model', selected_model] if selected_model.lower() != 'auto' else []
 
     session_target = cmd.get('session_target', {})
@@ -1195,7 +1231,7 @@ def stream_ask_copilot(cmd: dict, write_line):
 
     if session_mode == 'pinned' and session_id and _session_is_corrupt(session_id):
         try:
-            session_id_file.unlink(missing_ok=True)
+            clear_copilot_pinned_session_id(selected_model)
         except Exception:
             pass
         session_id = None
@@ -1277,6 +1313,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                     session_mode=session_mode,
                     session_id=session_id,
                     model=selected_model,
+                    provider=PROVIDER_COPILOT,
                 )
                 _stats_prefixes = (
                     'Total usage est:', 'API time spent:', 'Total session time:',
@@ -1330,7 +1367,7 @@ def stream_ask_copilot(cmd: dict, write_line):
             if not was_cancelled and (rc != 0 or any(m in _output_lower for m in _caperror_markers)):
                 if session_mode == 'pinned':
                     try:
-                        session_id_file.unlink(missing_ok=True)
+                        clear_copilot_pinned_session_id(selected_model)
                     except Exception:
                         pass
                     write_line({'type': 'progress',
@@ -1366,7 +1403,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                         if dirs:
                             actual_session_id = dirs[0].name
                             if session_mode == 'pinned':
-                                session_id_file.write_text(dirs[0].name)
+                                write_copilot_pinned_session_id(selected_model, dirs[0].name)
                 except Exception:
                     pass
 
@@ -1389,6 +1426,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                     'session_id': actual_session_id,
                     'session_mode': session_mode,
                     'model': selected_model,
+                    'provider': PROVIDER_COPILOT,
                 })
             else:
                 write_line({'type': 'error',
@@ -1400,6 +1438,218 @@ def stream_ask_copilot(cmd: dict, write_line):
         finally:
             _clear_lock_metadata(lock_path)
             fcntl.flock(lock_fh, fcntl.LOCK_UN)
+
+
+def _ask_genny_system_prompt() -> str:
+    return (
+        f"You are the AI agent embedded in {APP_NAME}. "
+        "Respond as the in-product assistant, not as a generic provider or model name. "
+        "Preserve the user's platform context and answer directly."
+    )
+
+
+def _stream_openai_chat(
+    env: dict,
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    active_state: dict[str, object],
+    on_chunk,
+):
+    api_key = str(env.get('OPENAI_API_KEY') or '').strip()
+    if not api_key:
+        raise ValueError('OpenAI API key is not configured in API Keys+')
+    payload = json.dumps({
+        'model': model,
+        'messages': messages,
+        'stream': True,
+    }).encode()
+    req = urllib.request.Request(
+        f'{openai_base_url(env)}/v1/chat/completions',
+        data=payload,
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+        },
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        for raw in resp:
+            if active_state.get('cancel_requested'):
+                return True
+            line = raw.decode('utf-8', errors='replace').strip()
+            if not line or not line.startswith('data:'):
+                continue
+            data = line[5:].strip()
+            if data == '[DONE]':
+                break
+            event = json.loads(data)
+            delta = (
+                event.get('choices', [{}])[0]
+                .get('delta', {})
+                .get('content', '')
+            )
+            if delta:
+                on_chunk(delta)
+    return bool(active_state.get('cancel_requested'))
+
+
+def _stream_ollama_chat(
+    env: dict,
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    active_state: dict[str, object],
+    on_chunk,
+):
+    payload = json.dumps({
+        'model': model,
+        'messages': messages,
+        'stream': True,
+    }).encode()
+    req = urllib.request.Request(
+        f'{ollama_base_url(env)}/api/chat',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        for raw in resp:
+            if active_state.get('cancel_requested'):
+                return True
+            chunk = json.loads(raw.decode('utf-8', errors='replace').strip() or '{}')
+            delta = chunk.get('message', {}).get('content', '')
+            if delta:
+                on_chunk(delta)
+            if chunk.get('done'):
+                break
+    return bool(active_state.get('cancel_requested'))
+
+
+def stream_ask_local_provider(cmd: dict, write_line, *, provider: str):
+    import uuid
+
+    prompt = cmd.get('prompt', '').strip()
+    if not prompt:
+        write_line({'type': 'error', 'message': 'No prompt provided'})
+        return
+
+    provider = normalize_provider(provider)
+    env = load_runtime_env(os.environ.copy())
+    selected_model = normalize_model(provider, cmd.get('model'), env)
+    session_target = cmd.get('session_target', {})
+    if not isinstance(session_target, dict):
+        session_target = {}
+    requested_mode = str(session_target.get('mode') or 'pinned').strip().lower()
+    source = cmd.get('source', 'daemon')
+    chat_history = AUGER_DIR / 'chat_history.jsonl'
+    timestamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+    session_payload = ensure_local_session(provider, selected_model, session_target)
+    session_id = str(session_payload.get('session_id') or '')
+    session_mode = requested_mode if requested_mode in {'pinned', 'session', 'new'} else 'pinned'
+    request_id = str(uuid.uuid4())
+
+    history = session_messages(session_id)
+    context_preamble = _build_context_preamble()
+    enriched_prompt = context_preamble + prompt if context_preamble else prompt
+    messages = [
+        {'role': 'system', 'content': _ask_genny_system_prompt()},
+        *history,
+        {'role': 'user', 'content': enriched_prompt},
+    ]
+
+    AUGER_DIR.mkdir(parents=True, exist_ok=True)
+    with open(chat_history, 'a') as hf:
+        hf.write(json.dumps({
+            'ts': timestamp,
+            'role': 'user',
+            'content': prompt,
+            'source': source,
+        }) + '\n')
+
+    response_chunks: list[str] = []
+
+    def _emit(delta: str):
+        response_chunks.append(delta)
+        write_line({'type': 'chunk', 'message': delta})
+
+    active_state = _register_active_copilot(
+        None,
+        request_id=request_id,
+        prompt=prompt,
+        session_mode=session_mode,
+        session_id=session_id,
+        model=selected_model,
+        provider=provider,
+    )
+    try:
+        if provider == PROVIDER_OPENAI:
+            was_cancelled = _stream_openai_chat(
+                env,
+                model=selected_model,
+                messages=messages,
+                active_state=active_state,
+                on_chunk=_emit,
+            )
+        elif provider == PROVIDER_OLLAMA:
+            was_cancelled = _stream_ollama_chat(
+                env,
+                model=selected_model,
+                messages=messages,
+                active_state=active_state,
+                on_chunk=_emit,
+            )
+        else:
+            write_line({'type': 'error', 'message': f'Unsupported provider: {provider}'})
+            return
+
+        if was_cancelled:
+            write_line({
+                'type': 'cancelled',
+                'message': 'Request cancelled — session preserved',
+            })
+            return
+
+        full_response = ''.join(response_chunks).strip()
+        if not full_response:
+            write_line({'type': 'error', 'message': f'{provider} returned an empty response'})
+            return
+
+        append_local_turn(session_id, prompt, full_response)
+        _write_session_snapshot(prompt, [full_response])
+        with open(chat_history, 'a') as hf:
+            hf.write(json.dumps({
+                'ts': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                'role': 'assistant',
+                'content': full_response,
+                'source': source,
+            }) + '\n')
+        write_line({
+            'type': 'done',
+            'status': 'ok',
+            'session_id': session_id,
+            'session_mode': session_mode,
+            'model': selected_model,
+            'provider': provider,
+        })
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode('utf-8', errors='replace').strip()
+        message = detail or f'{provider} HTTP error {exc.code}'
+        write_line({'type': 'error', 'message': message[:1000]})
+    except Exception as exc:
+        write_line({'type': 'error', 'message': str(exc)})
+    finally:
+        _clear_active_copilot(request_id)
+
+
+def stream_ask(cmd: dict, write_line):
+    provider = normalize_provider(cmd.get('provider'))
+    if provider_supports_copilot_sessions(provider):
+        stream_ask_copilot(cmd, write_line)
+        return
+    stream_ask_local_provider(cmd, write_line, provider=provider)
 
 
 # ── Docker / Artifactory streaming actions ────────────────────────────────────
@@ -1883,33 +2133,36 @@ SYNC_ACTIONS = {
 
 
 def stream_reinit_session(cmd: dict, write_line):
-    """Clear the pinned Copilot session so the next call starts a fresh --continue session.
-    Useful after a CAPIError / 400 or any session corruption. The session snapshot
-    preamble is preserved so context is re-injected on the very next Ask Auger message."""
+    """Clear the pinned session for the active provider/model scope."""
     import fcntl as _fcntl
-    session_id_file = AUGER_DIR / '.session_id'
+    provider = normalize_provider(cmd.get('provider'))
+    model = normalize_model(provider, cmd.get('model'))
     lock_path = AUGER_DIR / '.copilot.lock'
-    write_line({'type': 'progress', 'message': '🔄 Reinitializing Copilot session…'})
+    write_line({'type': 'progress', 'message': f'🔄 Reinitializing {provider} session…'})
     with open(lock_path, 'w') as _lf:
         _fcntl.flock(_lf, _fcntl.LOCK_EX)
         try:
-            if session_id_file.exists():
-                old_id = session_id_file.read_text().strip()
-                session_id_file.unlink(missing_ok=True)
+            if provider_supports_copilot_sessions(provider):
+                old_id = read_copilot_pinned_session_id(model)
+                clear_copilot_pinned_session_id(model)
+            else:
+                old_id = read_local_pinned_session_id(provider, model)
+                clear_local_pinned_session(provider, model)
+            if old_id:
                 write_line({'type': 'progress',
                             'message': f'🗑️  Cleared pinned session: {old_id[:12]}…'})
             else:
                 write_line({'type': 'progress',
                             'message': '[INFO]  No pinned session found (already fresh)'})
             write_line({'type': 'progress',
-                        'message': '[OK] Session cleared — next message will start a new --continue session with full context snapshot.'})
-            write_line({'type': 'done', 'status': 'ok'})
+                        'message': '[OK] Session cleared — next message will start a fresh scoped session with full context snapshot.'})
+            write_line({'type': 'done', 'status': 'ok', 'provider': provider, 'model': model})
         finally:
             _fcntl.flock(_lf, _fcntl.LOCK_UN)
 
 
 STREAM_ACTIONS = {
-    'ask_copilot':         stream_ask_copilot,
+    'ask_copilot':         stream_ask,
     'reinit_session':      stream_reinit_session,
     'restart_auger':       stream_restart_auger,
     'rebuild_auger':       stream_rebuild_auger,
@@ -2030,6 +2283,8 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
                 'lock_path': str(lock_path),
                 'active_request': bool(active_ask.get('active')),
                 'cancel_requested': bool(active_ask.get('cancel_requested')),
+                'active_provider': str(active_ask.get('provider') or ''),
+                'active_model': str(active_ask.get('model') or ''),
             })
         elif self.path == '/restart_daemon':
             self._restart_daemon_self()
@@ -2081,7 +2336,7 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
             # Dedicated /ask endpoint — shortcut for stream_ask_copilot
             if self.path == '/ask':
                 cmd.setdefault('source', 'host')
-                self._stream_action(stream_ask_copilot, cmd)
+                self._stream_action(stream_ask, cmd)
                 return
 
             # Dedicated /restart_platform endpoint — restarts UI only, daemon stays up

@@ -287,7 +287,6 @@ class DatabaseWidget(tk.Frame):
     def _create_ui(self):
         """Create the widget UI — three tabs: Workbench, AQL Library, Connections"""
         style = ttk.Style()
-        style.theme_use('default')
         style.configure('TNotebook', background=BG, borderwidth=0)
         style.configure('TNotebook.Tab', background=BG2, foreground=FG,
                         padding=[12, 4], font=('Segoe UI', 10))

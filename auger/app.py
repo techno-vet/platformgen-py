@@ -72,9 +72,9 @@ class AugerSREPlatform(tk.Tk):
         # Set window icon (titlebar + taskbar/dock).
         # Save PNG to tmp then load with tk.PhotoImage — most reliable on X11.
         try:
-            from auger.ui.icons import make_drill_icon
+            from auger.ui.icons import load_app_icon
             import tempfile, os
-            _icon_img = make_drill_icon(256, "#2ea043").convert("RGBA")
+            _icon_img = load_app_icon(256).convert("RGBA")
             _icon_tmp = os.path.join(os.fspath(state_dir()), "app_icon.png")
             _icon_img.save(_icon_tmp)
             _icon_photo = tk.PhotoImage(file=_icon_tmp)
@@ -122,6 +122,76 @@ class AugerSREPlatform(tk.Tk):
         """Configure ttk dark theme."""
         style = ttk.Style()
         style.theme_use('clam')
+
+        combo_bg = BG2
+        combo_bg_active = "#3a3f46"
+        combo_fg = FG
+        combo_dim = "#858585"
+        combo_accent = "#4ec9b0"
+
+        style.configure(
+            'TCombobox',
+            foreground=combo_fg,
+            fieldbackground=combo_bg,
+            background=combo_bg,
+            bordercolor=combo_bg_active,
+            darkcolor=combo_bg,
+            lightcolor=combo_bg,
+            arrowcolor=combo_accent,
+            insertcolor=combo_fg,
+            relief='flat',
+            borderwidth=1,
+            padding=(6, 2, 6, 2),
+        )
+        style.map(
+            'TCombobox',
+            fieldbackground=[
+                ('readonly', combo_bg),
+                ('disabled', BG),
+                ('focus', combo_bg_active),
+            ],
+            background=[
+                ('readonly', combo_bg),
+                ('disabled', BG),
+                ('focus', combo_bg_active),
+            ],
+            foreground=[
+                ('readonly', combo_fg),
+                ('disabled', combo_dim),
+            ],
+            bordercolor=[
+                ('readonly', combo_bg_active),
+                ('disabled', BG),
+                ('focus', combo_accent),
+            ],
+            lightcolor=[
+                ('readonly', combo_bg),
+                ('disabled', BG),
+                ('focus', combo_bg_active),
+            ],
+            darkcolor=[
+                ('readonly', combo_bg),
+                ('disabled', BG),
+                ('focus', combo_bg_active),
+            ],
+            arrowcolor=[
+                ('readonly', combo_accent),
+                ('disabled', combo_dim),
+                ('focus', combo_accent),
+            ],
+            selectbackground=[('readonly', combo_accent)],
+            selectforeground=[('readonly', BG)],
+        )
+        for pattern, value in {
+            '*TCombobox*Listbox.background': combo_bg,
+            '*TCombobox*Listbox.foreground': combo_fg,
+            '*TCombobox*Listbox.selectBackground': combo_accent,
+            '*TCombobox*Listbox.selectForeground': BG,
+        }.items():
+            try:
+                self.option_add(pattern, value)
+            except Exception:
+                pass
         
         # Configure notebook (tabs)
         style.configure('TNotebook', background=BG, borderwidth=0)

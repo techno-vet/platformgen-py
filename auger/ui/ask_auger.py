@@ -15,6 +15,24 @@ import sys
 from datetime import datetime, timedelta
 from dotenv import dotenv_values
 
+from auger.ai.provider_sessions import (
+    list_local_sessions,
+    read_copilot_pinned_session_id,
+    read_local_pinned_session_id,
+    rename_local_session,
+)
+from auger.ai.providers import (
+    COPILOT_MODEL_OPTIONS,
+    PROVIDER_COPILOT,
+    PROVIDER_LABELS,
+    PROVIDER_OPENAI,
+    available_models,
+    default_model,
+    normalize_model,
+    normalize_provider,
+    provider_supports_copilot_sessions,
+    seeded_models,
+)
 from .markdown_widget import MarkdownWidget
 from auger.runtime import assistant_name, cli_name, daemon_url, product_name, state_dir
 
@@ -25,27 +43,6 @@ except ImportError:
     _GIT_WORKFLOW_AVAILABLE = False
 
 
-COPILOT_MODEL_OPTIONS = (
-    "auto",
-    "claude-sonnet-4.6",
-    "claude-sonnet-4.5",
-    "claude-haiku-4.5",
-    "claude-opus-4.7",
-    "claude-opus-4.6",
-    "claude-opus-4.6-fast",
-    "claude-opus-4.5",
-    "claude-sonnet-4",
-    "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.3-codex",
-    "gpt-5.2-codex",
-    "gpt-5.2",
-    "gpt-5.1",
-    "gpt-5.4-mini",
-    "gpt-5-mini",
-    "gpt-4.1",
-)
-
 ASK_HEADER_BG = '#24292f'
 ASK_HEADER_BG_ACTIVE = '#2f363d'
 ASK_HEADER_ACCENT = '#22b8b2'
@@ -53,6 +50,11 @@ ASK_HEADER_ACCENT_ACTIVE = '#45d6d0'
 ASK_HEADER_TEXT = '#f0f6fc'
 ASK_HEADER_TEXT_MUTED = '#c9d1d9'
 ASK_HEADER_TEXT_DIM = '#8b949e'
+ASK_HEADER_COMBO_BG = '#2d333b'
+ASK_HEADER_COMBO_BG_ACTIVE = '#3a424c'
+ASK_HEADER_COMBO_TEXT = '#f0f6fc'
+ASK_HEADER_COMBO_FONT = ('Segoe UI', 10)
+ASK_HEADER_COMBO_LIST_FONT = ('Segoe UI', 11)
 
 SESSION_HEALTH_POLL_MS = 5000
 SESSION_LOCK_STALE_SECS = 15
@@ -89,11 +91,15 @@ class AskAugerPanel(tk.Frame):
         self._live_response_chunks = []
         self._live_response_prompt = ""
         self._panel_state_file = state_dir() / "ask_genny_panel.json"
+        self._provider_var = tk.StringVar(value=PROVIDER_LABELS[PROVIDER_COPILOT])
         self._model_var = tk.StringVar(value="auto")
         self._session_var = tk.StringVar(value="Pinned Session")
         self._selected_session_target = {'mode': 'pinned'}
         self._session_aliases = {}
         self._session_targets_by_label = {}
+        self._provider_labels = {label: provider for provider, label in PROVIDER_LABELS.items()}
+        self._provider_values = [PROVIDER_LABELS[provider] for provider in PROVIDER_LABELS]
+        self._model_options_cache = {provider: seeded_models(provider) for provider in PROVIDER_LABELS}
         self._load_panel_state()
 
         # Shared chat history watcher (cross-source: terminal, host, container)
@@ -148,6 +154,81 @@ class AskAugerPanel(tk.Frame):
         except Exception:
             return None
 
+    def _configure_header_combo_style(self):
+        style = ttk.Style()
+        style_name = 'AskHeader.TCombobox'
+        try:
+            style.theme_use(style.theme_use())
+        except Exception:
+            pass
+        style.configure(
+            style_name,
+            foreground=ASK_HEADER_COMBO_TEXT,
+            fieldbackground=ASK_HEADER_COMBO_BG,
+            background=ASK_HEADER_COMBO_BG,
+            arrowcolor=ASK_HEADER_ACCENT,
+            bordercolor=ASK_HEADER_BG_ACTIVE,
+            darkcolor=ASK_HEADER_COMBO_BG,
+            lightcolor=ASK_HEADER_COMBO_BG,
+            insertcolor=ASK_HEADER_COMBO_TEXT,
+            padding=(6, 2, 6, 2),
+            font=ASK_HEADER_COMBO_FONT,
+            relief='flat',
+            borderwidth=1,
+            arrowsize=14,
+        )
+        style.map(
+            style_name,
+            fieldbackground=[
+                ('readonly', ASK_HEADER_COMBO_BG),
+                ('disabled', ASK_HEADER_BG_ACTIVE),
+                ('focus', ASK_HEADER_COMBO_BG_ACTIVE),
+            ],
+            background=[
+                ('readonly', ASK_HEADER_COMBO_BG),
+                ('disabled', ASK_HEADER_BG_ACTIVE),
+                ('focus', ASK_HEADER_COMBO_BG_ACTIVE),
+            ],
+            bordercolor=[
+                ('readonly', ASK_HEADER_BG_ACTIVE),
+                ('disabled', ASK_HEADER_BG_ACTIVE),
+                ('focus', ASK_HEADER_ACCENT),
+            ],
+            lightcolor=[
+                ('readonly', ASK_HEADER_COMBO_BG),
+                ('disabled', ASK_HEADER_BG_ACTIVE),
+                ('focus', ASK_HEADER_COMBO_BG_ACTIVE),
+            ],
+            darkcolor=[
+                ('readonly', ASK_HEADER_COMBO_BG),
+                ('disabled', ASK_HEADER_BG_ACTIVE),
+                ('focus', ASK_HEADER_COMBO_BG_ACTIVE),
+            ],
+            foreground=[
+                ('readonly', ASK_HEADER_COMBO_TEXT),
+                ('disabled', ASK_HEADER_TEXT_DIM),
+            ],
+            arrowcolor=[
+                ('disabled', ASK_HEADER_TEXT_DIM),
+                ('focus', ASK_HEADER_ACCENT_ACTIVE),
+                ('readonly', ASK_HEADER_ACCENT),
+            ],
+            selectbackground=[('readonly', ASK_HEADER_ACCENT)],
+            selectforeground=[('readonly', ASK_HEADER_BG)],
+        )
+        option_db = {
+            '*TCombobox*Listbox.background': ASK_HEADER_COMBO_BG,
+            '*TCombobox*Listbox.foreground': ASK_HEADER_COMBO_TEXT,
+            '*TCombobox*Listbox.selectBackground': ASK_HEADER_ACCENT,
+            '*TCombobox*Listbox.selectForeground': ASK_HEADER_BG,
+            '*TCombobox*Listbox.font': ASK_HEADER_COMBO_LIST_FONT,
+        }
+        for pattern, value in option_db.items():
+            try:
+                self.option_add(pattern, value)
+            except Exception:
+                pass
+
     def _load_panel_state(self):
         data = {}
         if self._panel_state_file.exists():
@@ -156,9 +237,9 @@ class AskAugerPanel(tk.Frame):
             except Exception:
                 data = {}
 
-        model = str(data.get('selected_model') or 'auto').strip() or 'auto'
-        if model not in COPILOT_MODEL_OPTIONS:
-            model = 'auto'
+        provider = normalize_provider(data.get('selected_provider'))
+        self._provider_var.set(PROVIDER_LABELS[provider])
+        model = normalize_model(provider, data.get('selected_model'))
         self._model_var.set(model)
 
         aliases = data.get('session_aliases', {})
@@ -190,6 +271,7 @@ class AskAugerPanel(tk.Frame):
 
     def _save_panel_state(self):
         payload = {
+            'selected_provider': self._effective_provider(),
             'selected_model': self._effective_model(),
             'session_target': dict(self._selected_session_target),
             'session_aliases': dict(sorted(self._session_aliases.items())),
@@ -200,21 +282,22 @@ class AskAugerPanel(tk.Frame):
         except Exception:
             pass
 
+    def _effective_provider(self) -> str:
+        selected = self._provider_var.get()
+        return normalize_provider(self._provider_labels.get(selected, selected))
+
     def _effective_model(self) -> str:
-        model = str(self._model_var.get() or 'auto').strip() or 'auto'
-        return model if model in COPILOT_MODEL_OPTIONS else 'auto'
+        return normalize_model(self._effective_provider(), self._model_var.get())
 
     def _copilot_session_state_dir(self) -> Path:
         return Path.home() / '.copilot' / 'session-state'
 
     def _read_pinned_session_id(self) -> str:
-        session_id_file = state_dir() / '.session_id'
-        if not session_id_file.exists():
-            return ''
-        try:
-            return session_id_file.read_text(encoding='utf-8').strip()
-        except Exception:
-            return ''
+        provider = self._effective_provider()
+        model = self._effective_model()
+        if provider_supports_copilot_sessions(provider):
+            return read_copilot_pinned_session_id(model)
+        return read_local_pinned_session_id(provider, model)
 
     def _clean_session_name(self, name: str) -> str:
         return ' '.join(str(name or '').strip().split())
@@ -256,6 +339,20 @@ class AskAugerPanel(tk.Frame):
                 continue
         return entries
 
+    def _list_sessions_for_scope(self, limit: int = 30) -> list[dict]:
+        provider = self._effective_provider()
+        if provider_supports_copilot_sessions(provider):
+            return self._list_copilot_sessions(limit=limit)
+        return [
+            {
+                'id': entry['id'],
+                'updated_at': entry.get('updated_at', 0),
+                'updated_label': self._session_timestamp_label(entry.get('updated_at')),
+                'alias': entry.get('alias', ''),
+            }
+            for entry in list_local_sessions(provider, self._effective_model(), limit=limit)
+        ]
+
     def _session_display_label(self, session_id: str, alias: str = '', updated_label: str = '', pinned: bool = False) -> str:
         base = alias or ('Pinned Session' if pinned else f'Session {session_id[:8]}')
         parts = [base]
@@ -292,9 +389,39 @@ class AskAugerPanel(tk.Frame):
         if refresh and hasattr(self, '_session_combo'):
             self._refresh_session_selector()
 
+    def _refresh_provider_selector(self):
+        self._provider_combo['values'] = self._provider_values
+        self._provider_var.set(PROVIDER_LABELS[self._effective_provider()])
+
+    def _refresh_model_options(self):
+        provider = self._effective_provider()
+        options = self._model_options_cache.get(provider) or available_models(provider)
+        self._model_options_cache[provider] = options
+        self._model_combo['values'] = options
+        self._model_var.set(normalize_model(provider, self._model_var.get()))
+
+    def _refresh_provider_models_async(self):
+        provider = self._effective_provider()
+        model_before = self._model_var.get()
+
+        def _work():
+            options = available_models(provider)
+
+            def _apply():
+                if self._effective_provider() != provider:
+                    return
+                self._model_options_cache[provider] = options
+                self._model_combo['values'] = options
+                self._model_var.set(normalize_model(provider, model_before))
+                self._save_panel_state()
+                self._refresh_session_selector()
+
+            self.after(0, _apply)
+
+        threading.Thread(target=_work, daemon=True).start()
+
     def _refresh_model_selector(self):
-        self._model_combo['values'] = COPILOT_MODEL_OPTIONS
-        self._model_var.set(self._effective_model())
+        self._refresh_model_options()
 
     def _refresh_session_selector(self):
         pinned_session_id = self._read_pinned_session_id()
@@ -317,7 +444,7 @@ class AskAugerPanel(tk.Frame):
             values.append(new_label)
             mapping[new_label] = dict(self._selected_session_target)
 
-        for entry in self._list_copilot_sessions():
+        for entry in self._list_sessions_for_scope():
             if entry['id'] == pinned_session_id:
                 continue
             label = self._session_display_label(
@@ -358,8 +485,22 @@ class AskAugerPanel(tk.Frame):
             return self._read_pinned_session_id()
         return ''
 
+    def _on_provider_selected(self, _event=None):
+        current_label = self._provider_var.get()
+        provider = self._provider_labels.get(current_label, current_label)
+        self._provider_var.set(PROVIDER_LABELS[normalize_provider(provider)])
+        self._model_var.set(default_model(self._effective_provider()))
+        self._set_session_target({'mode': 'pinned'}, refresh=False)
+        self._refresh_model_selector()
+        self._refresh_session_selector()
+        self._refresh_provider_health_ui()
+        self._save_panel_state()
+        self._refresh_provider_models_async()
+
     def _on_model_selected(self, _event=None):
         self._model_var.set(self._effective_model())
+        self._set_session_target({'mode': 'pinned'}, refresh=False)
+        self._refresh_session_selector()
         self._save_panel_state()
 
     def _on_session_selected(self, _event=None):
@@ -369,9 +510,10 @@ class AskAugerPanel(tk.Frame):
 
     def _new_session(self):
         suggested = datetime.now().strftime('Session %m/%d %H:%M')
+        provider = PROVIDER_LABELS[self._effective_provider()]
         name = simpledialog.askstring(
-            'New Copilot Session',
-            'Optional session name for the next Ask Genny conversation:',
+            f'New {provider} Session',
+            f'Optional session name for the next {provider} Ask Genny conversation:',
             parent=self,
             initialvalue=suggested,
         )
@@ -380,12 +522,13 @@ class AskAugerPanel(tk.Frame):
         self._set_session_target({'mode': 'new', 'name': name})
 
     def _rename_session(self):
+        provider = PROVIDER_LABELS[self._effective_provider()]
         mode = self._selected_session_target.get('mode')
         if mode == 'new':
             initial = self._clean_session_name(self._selected_session_target.get('name', ''))
             renamed = simpledialog.askstring(
                 'Rename Pending Session',
-                'Name for the next new Copilot session:',
+                f'Name for the next new {provider} session:',
                 parent=self,
                 initialvalue=initial,
             )
@@ -398,27 +541,35 @@ class AskAugerPanel(tk.Frame):
         if not session_id:
             messagebox.showinfo(
                 'No Session Available',
-                'There is no Copilot session to rename yet. Send a prompt first or choose an existing session.',
+                f'There is no {provider} session to rename yet. Send a prompt first or choose an existing session.',
                 parent=self,
             )
             return
 
-        current_name = self._session_aliases.get(session_id, '')
+        if provider_supports_copilot_sessions(self._effective_provider()):
+            current_name = self._session_aliases.get(session_id, '')
+        else:
+            current_name = list_local_sessions(self._effective_provider(), self._effective_model(), limit=100)
+            current_name = next((entry.get('alias', '') for entry in current_name if entry.get('id') == session_id), '')
         renamed = simpledialog.askstring(
-            'Rename Copilot Session',
-            'Friendly name for this Copilot session:',
+            f'Rename {provider} Session',
+            f'Friendly name for this {provider} session:',
             parent=self,
             initialvalue=current_name,
         )
         if renamed is None:
             return
         cleaned = self._clean_session_name(renamed)
-        if cleaned:
-            self._session_aliases[session_id] = cleaned
+        if provider_supports_copilot_sessions(self._effective_provider()):
+            if cleaned:
+                self._session_aliases[session_id] = cleaned
+            else:
+                self._session_aliases.pop(session_id, None)
         else:
-            self._session_aliases.pop(session_id, None)
+            rename_local_session(session_id, cleaned)
         self._save_panel_state()
         self._refresh_session_selector()
+        self._refresh_provider_health_ui()
 
     def _apply_session_result(self, metadata: dict | None):
         if not metadata:
@@ -429,8 +580,10 @@ class AskAugerPanel(tk.Frame):
 
         if mode == 'new' and actual_session_id:
             planned_name = self._clean_session_name(self._selected_session_target.get('name', ''))
-            if planned_name and actual_session_id not in self._session_aliases:
+            if planned_name and provider_supports_copilot_sessions(self._effective_provider()) and actual_session_id not in self._session_aliases:
                 self._session_aliases[actual_session_id] = planned_name
+            elif planned_name:
+                rename_local_session(actual_session_id, planned_name)
             self._selected_session_target = {'mode': 'session', 'session_id': actual_session_id}
         elif mode == 'session' and actual_session_id:
             self._selected_session_target = {'mode': 'session', 'session_id': actual_session_id}
@@ -448,9 +601,34 @@ class AskAugerPanel(tk.Frame):
         else:
             session_id = self._selected_session_id()
         self._apply_session_result({'session_id': session_id, 'model': self._effective_model()})
+
+    def _open_provider_manager(self):
+        try:
+            module = __import__("auger.ui.widgets.api_config", fromlist=["APIConfigWidget"])
+            self.content_area.add_widget_tab("API Keys+", module.APIConfigWidget)
+        except Exception as exc:
+            messagebox.showerror(
+                "Provider Manager",
+                f"Could not open API Keys+ provider configuration.\n\n{exc}",
+                parent=self,
+            )
+
+    def _refresh_provider_health_ui(self):
+        supports_copilot = provider_supports_copilot_sessions(self._effective_provider())
+        session_state = 'readonly'
+        new_session_state = tk.NORMAL
+        rename_state = tk.NORMAL if self._selected_session_target.get('mode') == 'new' or self._selected_session_id() else tk.DISABLED
+        if not supports_copilot:
+            self._unlock_btn.pack_forget()
+            self._session_age_label.config(text="")
+            self._lock_dot.config(fg=ASK_HEADER_ACCENT_ACTIVE)
+        self._session_combo.config(state=session_state)
+        self._new_session_btn.config(state=new_session_state)
+        self._rename_session_btn.config(state=rename_state)
     
     def _build_ui(self):
         """Build the panel UI."""
+        self._configure_header_combo_style()
         # Header
         header = tk.Frame(self, bg=ASK_HEADER_BG, height=34)
         header.pack(fill=tk.X, side=tk.TOP)
@@ -478,17 +656,54 @@ class AskAugerPanel(tk.Frame):
 
         tk.Label(
             header,
-            text="Model",
+            text="Provider",
             font=('Segoe UI', 9),
             fg=ASK_HEADER_TEXT_MUTED,
             bg=ASK_HEADER_BG
         ).pack(side=tk.LEFT, padx=(4, 4))
+
+        self._provider_combo = ttk.Combobox(
+            header,
+            textvariable=self._provider_var,
+            state='readonly',
+            width=16,
+            style='AskHeader.TCombobox',
+            font=ASK_HEADER_COMBO_FONT,
+        )
+        self._provider_combo.pack(side=tk.LEFT, padx=(0, 8), pady=2)
+        self._provider_combo.bind('<<ComboboxSelected>>', self._on_provider_selected)
+
+        self._providers_btn = tk.Button(
+            header,
+            text="Providers...",
+            command=self._open_provider_manager,
+            bg=ASK_HEADER_BG,
+            fg=ASK_HEADER_TEXT,
+            font=('Segoe UI', 9),
+            relief=tk.FLAT,
+            cursor='hand2',
+            activebackground=ASK_HEADER_BG_ACTIVE,
+            activeforeground=ASK_HEADER_TEXT,
+            padx=6,
+            pady=0,
+        )
+        self._providers_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Label(
+            header,
+            text="Model",
+            font=('Segoe UI', 9),
+            fg=ASK_HEADER_TEXT_MUTED,
+            bg=ASK_HEADER_BG
+        ).pack(side=tk.LEFT, padx=(0, 4))
 
         self._model_combo = ttk.Combobox(
             header,
             textvariable=self._model_var,
             state='readonly',
             width=18,
+            style='AskHeader.TCombobox',
+            font=ASK_HEADER_COMBO_FONT,
         )
         self._model_combo.pack(side=tk.LEFT, padx=(0, 8), pady=2)
         self._model_combo.bind('<<ComboboxSelected>>', self._on_model_selected)
@@ -506,6 +721,8 @@ class AskAugerPanel(tk.Frame):
             textvariable=self._session_var,
             state='readonly',
             width=28,
+            style='AskHeader.TCombobox',
+            font=ASK_HEADER_COMBO_FONT,
         )
         self._session_combo.pack(side=tk.LEFT, padx=(0, 4), pady=2)
         self._session_combo.bind('<<ComboboxSelected>>', self._on_session_selected)
@@ -617,6 +834,11 @@ class AskAugerPanel(tk.Frame):
                 padx=8, pady=0,
             )
             self._popout_btn.pack(side=tk.RIGHT, padx=(0, 4))
+
+        self._refresh_provider_selector()
+        self._refresh_model_selector()
+        self._refresh_session_selector()
+        self._refresh_provider_health_ui()
         
         # Input bar at BOTTOM (pack before response so it stays visible)
         input_frame = tk.Frame(self, bg='#252526')
@@ -905,6 +1127,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         # Tell cli.py this subprocess was spawned by the panel — so it tags
         # chat_history entries as 'panel' and the watcher skips them (no duplicate).
         env['AUGER_CHAT_SOURCE'] = 'panel'
+        env['AUGER_ASK_PROVIDER'] = self._effective_provider()
         env['AUGER_COPILOT_MODEL'] = self._effective_model()
         env['AUGER_COPILOT_SESSION_MODE'] = str(self._selected_session_target.get('mode') or 'pinned')
         env.pop('AUGER_COPILOT_SESSION_ID', None)
@@ -935,6 +1158,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 data=_json.dumps({
                     'prompt': prompt,
                     'source': 'container',
+                    'provider': self._effective_provider(),
                     'model': self._effective_model(),
                     'session_target': dict(self._selected_session_target),
                 }).encode(),
@@ -956,6 +1180,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                         if msg_type == 'output' and msg:
                             response_lines.append(msg)
                             self._queue.put(('line', msg + '\n'))
+                        elif msg_type == 'chunk' and msg:
+                            response_lines.append(msg)
+                            self._queue.put(('chunk', msg))
                         elif msg_type == 'progress':
                             pass  # suppress internal progress messages from panel
                         elif msg_type == 'done':
@@ -976,6 +1203,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                         pass
         except urllib.error.URLError:
             # Daemon not reachable — fall back to local auger CLI
+            if self._effective_provider() != PROVIDER_COPILOT:
+                self._queue.put(('error', 'Host daemon is unavailable. Start PlatformGen host tools to use OpenAI or Ollama providers.'))
+                return
             augmented_prompt = self._behavior_preamble() + prompt
             self._active_request_mode = 'local'
             self._cancel_supported = True
@@ -1076,6 +1306,10 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 
                 if msg_type == 'line':
                     self.response.append_markdown(data)
+                    self._track_live_response_chunk(data)
+
+                elif msg_type == 'chunk':
+                    self.response.append_raw(data)
                     self._track_live_response_chunk(data)
                 
                 elif msg_type == 'error':
@@ -1841,6 +2075,15 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         if data is None:
             return
 
+        if not provider_supports_copilot_sessions(self._effective_provider()):
+            self._session_locked = False
+            self._session_locked_secs = 0
+            self._session_last_ts = data.get('last_response_ts')
+            self._session_age_label.config(text='')
+            if not self._is_processing:
+                self._apply_lock_state(False, locked_secs=0)
+            return
+
         self._session_locked = bool(data.get('locked', False))
         self._session_locked_secs = int(data.get('locked_secs') or 0)
         self._session_last_ts = data.get('last_response_ts')
@@ -1868,6 +2111,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
 
     def _force_unlock_session(self):
         """Force-clear the Copilot session lock after user confirmation."""
+        if not provider_supports_copilot_sessions(self._effective_provider()):
+            return
         from tkinter import messagebox
         if not messagebox.askyesno(
             'Unlock Session',
@@ -1972,6 +2217,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
     def _set_processing(self):
         """Disable send button, start pulsating dot, and show Stop when supported."""
         self.ask_btn.config(state=tk.DISABLED)
+        self._provider_combo.config(state='disabled')
         self._model_combo.config(state='disabled')
         self._session_combo.config(state='disabled')
         self._new_session_btn.config(state=tk.DISABLED)
@@ -1995,6 +2241,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         """Re-enable send button and stop pulsating dot.
         If check_lock=True, verify daemon lock is cleared — go red if stuck."""
         self.ask_btn.config(state=tk.NORMAL)
+        self._provider_combo.config(state='readonly')
         self._model_combo.config(state='readonly')
         self._session_combo.config(state='readonly')
         self._new_session_btn.config(state=tk.NORMAL)
@@ -2033,9 +2280,19 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
             threading.Thread(target=_verify, daemon=True).start()
         else:
             self._lock_dot.config(fg=ASK_HEADER_ACCENT)
+        self._refresh_provider_health_ui()
 
     def _apply_lock_state(self, locked: bool, locked_secs: int = 0, force_unlock: bool = False):
         """Apply final lock state after processing completes or on restart."""
+        if not provider_supports_copilot_sessions(self._effective_provider()):
+            self._lock_dot.config(fg=ASK_HEADER_ACCENT_ACTIVE)
+            try:
+                self._unlock_btn.pack_forget()
+            except Exception:
+                pass
+            if self.status_label.cget('text') in ('Session locked — click Unlock', 'Session busy...', 'Unlocking session...'):
+                self.status_label.config(text='Ready')
+            return
         if locked and (force_unlock or locked_secs >= SESSION_LOCK_STALE_SECS):
             self._lock_dot.config(fg='#f85149')   # red — stale/stuck
             try:
@@ -2077,14 +2334,14 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         '/rebuild':  'rebuild_auger',
     }
 
-    _SLASH_HELP = """*Auger Slash Commands* (must be the first character of your message)
+    _SLASH_HELP = """*Ask Genny Slash Commands* (must be the first character of your message)
 
-`/reinit`   — Clear the pinned Copilot session and start fresh
+`/reinit`   — Clear the pinned session for the current provider/model lane
 `/restart`  — Restart the Auger container (same as relaunch)
 `/rebuild`  — Rebuild the personalized Docker image and restart
 `/help`     — Show this command reference
 
-All other messages are sent directly to Copilot as normal prompts.
+All other messages are sent directly to the selected provider as normal prompts.
 """
 
     def _detect_host_intent(self, prompt: str) -> str:
@@ -2101,7 +2358,12 @@ All other messages are sent directly to Copilot as normal prompts.
         try:
             req = urllib.request.Request(
                 daemon_url,
-                data=__import__('json').dumps({'prompt': prompt, 'source': 'container'}).encode(),
+                data=__import__('json').dumps({
+                    'prompt': prompt,
+                    'source': 'container',
+                    'provider': self._effective_provider(),
+                    'model': self._effective_model(),
+                }).encode(),
                 headers={'Content-Type': 'application/json'},
                 method='POST'
             )

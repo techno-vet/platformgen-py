@@ -382,7 +382,6 @@ class PromptsWidget(tk.Frame):
 
         # Style ttk widgets
         style = ttk.Style()
-        style.theme_use("clam")
         style.configure("TCombobox", fieldbackground=BG3, background=BG3,
                         foreground=FG, selectbackground=ACCENT,
                         selectforeground=FG, arrowcolor=FG)

@@ -806,18 +806,22 @@ def make_drill_icon(size: int = 64, color: str = "#2ea043") -> Image.Image:
     return img.resize((size, size), Image.LANCZOS)
 
 
+def load_app_icon(size: int = 256) -> Image.Image:
+    """Return the bundled application icon, falling back to the legacy drill mark."""
+    if _APP_ICON_ASSET.exists():
+        with Image.open(_APP_ICON_ASSET) as img:
+            return img.convert("RGBA").resize((size, size), Image.LANCZOS)
+    return make_drill_icon(size, "#22b8b2")
+
+
 def install_app_icon(icon_path: str = None) -> str:
-    """Save the bundled Auger app icon to icon_path (default ~/.local/share/icons/)."""
+    """Save the bundled application icon to icon_path (default ~/.local/share/icons/)."""
     if icon_path is None:
         dest = Path.home() / ".local" / "share" / "icons" / "auger-platform.png"
     else:
         dest = Path(icon_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if _APP_ICON_ASSET.exists():
-        with Image.open(_APP_ICON_ASSET) as img:
-            img.convert("RGBA").resize((256, 256), Image.LANCZOS).save(str(dest))
-    else:
-        make_drill_icon(256, "#2ea043").save(str(dest))
+    load_app_icon(256).save(str(dest))
     return str(dest)
 
 
