@@ -21,8 +21,9 @@ from dotenv import dotenv_values, load_dotenv
 from auger.tools.jira_session import JiraSession
 from auger.tools import prisma_cloud as _prisma_cloud
 from auger.tools import prisma_history as _prisma_history
-from auger.ui import icons as _icons
-from auger.ui.utils import add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import add_treeview_menu, auger_home as _auger_home
+from platformgen.runtime import state_dir
 
 BG = "#1e1e1e"
 BG2 = "#252526"
@@ -509,13 +510,13 @@ class PrismaCloudWidget(tk.Frame):
     # ── Data loading ─────────────────────────────────────────────────────────
 
     def _reload_env(self):
-        env_file = _auger_home() / ".auger" / ".env"
+        env_file = state_dir() / ".env"
         if env_file.exists():
             load_dotenv(env_file, override=True)
         self.url_var.set(os.getenv("PRISMA_CLOUD_URL", "https://app.gov.prismacloud.io"))
         self.access_key_var.set(os.getenv("PRISMA_CLOUD_ACCESS_KEY", ""))
         self.secret_key_var.set(os.getenv("PRISMA_CLOUD_SECRET_KEY", ""))
-        self._set_status("Reloaded Prisma credentials from ~/.auger/.env", SUCCESS)
+        self._set_status(f"Reloaded Prisma credentials from {env_file}", SUCCESS)
 
     def _make_client(self) -> PrismaCloudClient:
         prisma_mod = self._load_prisma_module()

@@ -1,16 +1,16 @@
 #!/bin/bash
 # PlatformGen - Container Entrypoint
-# Auto-initializes auger config if not already done.
+# Auto-initializes runtime config if not already done.
 #
 # Option A (user-specific image): The container image is built by platformgen-launch.sh
-# with the host user's uid/gid baked in via Dockerfile.user. AUGER_HOST_HOME is
+# with the host user's uid/gid baked in via Dockerfile.user. PLATFORMGEN_HOST_HOME is
 # set in the image ENV so all paths resolve correctly — no uid mismatch, no
 # Permission Denied errors on shared mounts.
 #
-# Backward-compat fallback: if AUGER_HOST_HOME is not set (old base image),
+# Backward-compat fallback: if PLATFORMGEN_HOST_HOME / AUGER_HOST_HOME is not set,
 # defaults to /home/auger so the old behavior is preserved.
 
-_H="${AUGER_HOST_HOME:-/home/auger}"
+_H="${PLATFORMGEN_HOST_HOME:-${AUGER_HOST_HOME:-/home/auger}}"
 
 AUGER_CONFIG="${_H}/.auger/config.yaml"
 AUGER_ENV="${_H}/.auger/.env"
@@ -18,23 +18,44 @@ AUGER_ENV="${_H}/.auger/.env"
 # ── Live-code symlink resolution ──────────────────────────────────────────────
 # Default (prod): symlink already points to auger_baked — no action needed.
 # Dev mode: when explicitly requested, repoint the symlink to live code.
-AUGER_HOME="/home/auger/auger-platform"
-REPO_AUGER="${_H}/repos/auger-ai-sre-platform/auger"
-BAKED_AUGER="${AUGER_HOME}/auger_baked"
-CURRENT_LINK="${AUGER_HOME}/auger"
-USE_LIVE_REPO="${AUGER_USE_LIVE_REPO:-0}"
+APP_HOME="/home/auger/auger-platform"
+[ -d "/home/auger/platformgen-platform" ] && APP_HOME="/home/auger/platformgen-platform"
+REPO_AUGER=""
+for candidate in \
+    "${_H}/repos/platformgen-py/auger" \
+    "${_H}/projects/platformgen-py/auger" \
+    "${_H}/repos/auger-ai-sre-platform/auger"
+do
+    if [ -d "$candidate" ]; then
+        REPO_AUGER="$candidate"
+        break
+    fi
+done
+BAKED_AUGER="${APP_HOME}/auger_baked"
+CURRENT_LINK="${APP_HOME}/auger"
+USE_LIVE_REPO="${PLATFORMGEN_USE_LIVE_REPO:-${AUGER_USE_LIVE_REPO:-0}}"
 
-if [ "$USE_LIVE_REPO" = "1" ] && [ -d "$REPO_AUGER" ] && [ -L "$CURRENT_LINK" ]; then
+if [ "$USE_LIVE_REPO" = "1" ] && [ -n "$REPO_AUGER" ] && [ -L "$CURRENT_LINK" ]; then
     # Dev launcher requested live code/hot-reload support.
     rm -f "$CURRENT_LINK" && ln -sfn "$REPO_AUGER" "$CURRENT_LINK" 2>/dev/null || true
 
     # Sync any new requirements from the live repo into a persistent user-owned package
-    # directory on the ~/.auger host volume. This survives container restarts without
+    # directory on the runtime state volume. This survives container restarts without
     # needing a root-owned system install or a full image rebuild.
     PYPACKAGES="${_H}/.auger/pypackages"
-    LIVE_REQ="${_H}/repos/auger-ai-sre-platform/requirements.txt"
+    LIVE_REQ=""
+    for candidate in \
+        "${_H}/repos/platformgen-py/requirements.txt" \
+        "${_H}/projects/platformgen-py/requirements.txt" \
+        "${_H}/repos/auger-ai-sre-platform/requirements.txt"
+    do
+        if [ -f "$candidate" ]; then
+            LIVE_REQ="$candidate"
+            break
+        fi
+    done
     mkdir -p "$PYPACKAGES"
-    if [ -f "$LIVE_REQ" ]; then
+    if [ -n "$LIVE_REQ" ] && [ -f "$LIVE_REQ" ]; then
         pip install --quiet --target "$PYPACKAGES" -r "$LIVE_REQ" 2>/dev/null || true
     fi
     # Prepend to PYTHONPATH so imports find the persistent packages
@@ -59,7 +80,7 @@ TOKEN="${COPILOT_GITHUB_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-${GHE_TOKEN}}}}"
 
 if [ ! -f "$AUGER_CONFIG" ] && [ -n "$TOKEN" ]; then
     echo "Initializing PlatformGen configuration..."
-    auger init --token "$TOKEN" 2>/dev/null || true
+    platformgen init --token "$TOKEN" 2>/dev/null || auger init --token "$TOKEN" 2>/dev/null || true
     echo "PlatformGen initialized"
 fi
 

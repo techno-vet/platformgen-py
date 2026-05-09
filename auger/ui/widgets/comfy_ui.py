@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
 
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 
 try:
     from PIL import Image, ImageDraw, ImageTk

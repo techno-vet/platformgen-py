@@ -9,6 +9,7 @@ import os
 import urllib.request
 import urllib.error
 from pathlib import Path
+from platformgen.runtime import assistant_name, daemon_url
 
 try:
     from PIL import Image, ImageDraw, ImageFilter, ImageTk
@@ -97,7 +98,7 @@ SEED_CODE = '''def make_image(size=256, color="#2ea043"):
 '''
 
 STANDARD_ICON_CODE = '''def make_image(size=256, color="#2ea043"):
-    """Auger standard app icon — A letterform with auger tip on dark tile."""
+    """PlatformGen standard app icon — dark tile with a stylized letterform."""
     from PIL import Image, ImageDraw
     RENDER = size * 2
     img = Image.new("RGBA", (RENDER, RENDER), (0, 0, 0, 0))
@@ -370,12 +371,12 @@ class ImageLabWidget(tk.Frame):
         return ""
 
     def _stream_ask(self, prompt, on_chunk, on_done, on_error):
-        """Send prompt through the host daemon Ask Auger path."""
+        """Send prompt through the host daemon assistant path."""
 
         def _run():
             try:
                 status_req = urllib.request.Request(
-                    "http://localhost:7437/session_status",
+                    f"{daemon_url()}/session_status",
                     method="GET",
                 )
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -385,18 +386,18 @@ class ImageLabWidget(tk.Frame):
                     locked_secs = int(status.get("locked_secs") or 0)
                     if locked_secs >= 120:
                         on_error(
-                            "Ask Auger appears stuck from an older request "
-                            f"({locked_secs}s). Open the main Ask Auger panel and use Unlock before retrying."
+                            f"Ask {assistant_name()} appears stuck from an older request "
+                            f"({locked_secs}s). Open the main Ask {assistant_name()} panel and use Unlock before retrying."
                         )
                     else:
                         on_error(
-                            "Another Ask Auger request is still running. "
+                            f"Another Ask {assistant_name()} request is still running. "
                             "Wait for it to finish, then try Apply again."
                         )
                     return
 
                 req = urllib.request.Request(
-                    "http://localhost:7437/ask",
+                    f"{daemon_url()}/ask",
                     data=json.dumps({"prompt": prompt, "source": "image_lab"}).encode(),
                     headers={"Content-Type": "application/json"},
                     method="POST",
@@ -417,11 +418,11 @@ class ImageLabWidget(tk.Frame):
                             on_done("\n".join(response_lines))
                             return
                         elif msg_type == "error":
-                            on_error(msg or "Ask Auger request failed")
+                            on_error(msg or f"Ask {assistant_name()} request failed")
                             return
                 on_done("\n".join(response_lines))
             except urllib.error.URLError:
-                on_error("Ask Auger daemon is not reachable. Start/restart the host daemon and try again.")
+                on_error(f"Ask {assistant_name()} daemon is not reachable. Start/restart the host daemon and try again.")
             except Exception as e:
                 on_error(str(e))
 

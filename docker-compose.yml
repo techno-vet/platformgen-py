@@ -9,9 +9,9 @@ services:
       args:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
         BUILD_HASH: ${BUILD_HASH:-unknown}
-    image: auger-platform:latest
-    container_name: auger-platform
-    hostname: auger-platform
+    image: platformgen-platform:latest
+    container_name: platformgen-platform
+    hostname: platformgen-platform
 
     # DNS for github.com resolution (AWS VPC DNS doesn't resolve github.com)
     dns:

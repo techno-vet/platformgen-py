@@ -1,5 +1,5 @@
 """
-Database Widget - SQL Workbench for Auger
+Database Widget - SQL Workbench for PlatformGen
 Provides SQL query execution, schema browsing, and connection management
 """
 
@@ -13,7 +13,8 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 import csv
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.runtime import assistant_name, state_dir
 
 try:
     from PIL import Image as _PILImage, ImageDraw as _PILImageDraw, ImageTk as _PILImageTk
@@ -21,7 +22,7 @@ try:
 except ImportError:
     _PIL_OK = False
 
-# Color scheme (matching Auger theme)
+# Color scheme (matching PlatformGen theme)
 BG = '#1e1e1e'
 BG2 = '#252526'
 BG3 = '#2d2d2d'
@@ -182,7 +183,7 @@ _AQL_PRELOADED_HISTORY = [
     for _name, sql in items
 ]
 
-# Regex that matches any known Auger / Copilot CLI metadata line that may be
+# Regex that matches known assistant / Copilot CLI metadata lines that may be
 # appended after the SQL in streamed responses.
 _CLI_METADATA_RE = re.compile(
     r'(?m)^[^\n]*(?:'
@@ -235,7 +236,7 @@ except ImportError:
 
 
 class DatabaseWidget(tk.Frame):
-    """SQL Workbench widget for Auger"""
+    """SQL Workbench widget for PlatformGen"""
     
     # Widget metadata
     WIDGET_NAME = "database"
@@ -257,7 +258,7 @@ class DatabaseWidget(tk.Frame):
         self.aql_history = list(_AQL_PRELOADED_HISTORY)
         self.aql_history_index = -1   # -1 = not navigating
         self._aql_history_draft = ""  # saves in-progress text when navigating
-        self.connections_file = os.path.join(os.path.expanduser('~'), '.auger', 'db_connections.json')
+        self.connections_file = str(state_dir() / 'db_connections.json')
         # Pre-populated connections from flux config (read-only, merged at load time)
         _here = os.path.dirname(os.path.abspath(__file__))
         self._preset_file = os.path.join(_here, '..', '..', 'data', 'db_connections.yaml')
@@ -744,12 +745,12 @@ class DatabaseWidget(tk.Frame):
         self._aql_entry.bind('<FocusOut>', lambda e: self._aql_entry.config(highlightthickness=0))
 
         self._aql_btn = tk.Button(
-            aql_frame, text="Ask Auger →", command=self._run_aql,
+            aql_frame, text=f"Ask {assistant_name()} →", command=self._run_aql,
             bg=ACCENT2, fg='black', font=('Segoe UI', 9, 'bold'),
             relief=tk.FLAT, padx=10
         )
         self._aql_btn.pack(side=tk.LEFT, padx=(4, 8))
-        tk.Label(aql_frame, text="describe what you want — Auger writes the SQL",
+        tk.Label(aql_frame, text=f"describe what you want — {assistant_name()} writes the SQL",
                  font=('Segoe UI', 8), fg='#666', bg=BG2).pack(side=tk.LEFT)
 
         # ── Query text area ──
@@ -851,7 +852,7 @@ class DatabaseWidget(tk.Frame):
         return "\n".join(lines)
 
     def _run_aql(self):
-        """Translate AQL natural-language request → SQL via Auger CLI, stream into editor."""
+        """Translate AQL natural-language request → SQL via the assistant CLI, stream into editor."""
         prompt_text = self._aql_var.get().strip()
         if not prompt_text:
             self._aql_entry.focus_set()
@@ -889,7 +890,7 @@ class DatabaseWidget(tk.Frame):
                 # Strip markdown fences if Auger wrapped it anyway
                 raw = self.query_text.get('1.0', tk.END)
                 cleaned = re.sub(r'```(?:sql)?\n?', '', raw, flags=re.IGNORECASE).replace('```', '').strip()
-                # Strip all known Copilot CLI / Auger session metadata lines
+                # Strip all known Copilot CLI / assistant session metadata lines
                 cleaned = _CLI_METADATA_RE.sub('', cleaned)
                 # Strip any trailing pipe-table rows the CLI may emit
                 cleaned = re.sub(r'(?m)^\s*\|[^\n]*\n?', '', cleaned)
@@ -900,14 +901,14 @@ class DatabaseWidget(tk.Frame):
                 sql_body = cleaned[header_end+1:].strip() if header_end != -1 else cleaned
                 self.query_text.delete('1.0', tk.END)
                 self.query_text.insert('1.0', header + '\n' + sql_body + '\n')
-                self._aql_btn.config(text="Ask Auger →", state=tk.NORMAL, bg=ACCENT2, fg='black')
+                self._aql_btn.config(text=f"Ask {assistant_name()} →", state=tk.NORMAL, bg=ACCENT2, fg='black')
                 self._aql_var.set('')
                 self.status_var.set("✓ AQL complete — review SQL and press F5 to execute")
             self.after(0, _finish)
 
         def _on_error(err):
             self.after(0, lambda: self.query_text.insert(tk.END, f"\n-- Error: {err}"))
-            self.after(0, lambda: self._aql_btn.config(text="Ask Auger →", state=tk.NORMAL, bg=ACCENT2, fg='black'))
+            self.after(0, lambda: self._aql_btn.config(text=f"Ask {assistant_name()} →", state=tk.NORMAL, bg=ACCENT2, fg='black'))
 
         self._stream_ask(full_prompt, _on_chunk, _on_done, _on_error)
 
@@ -923,8 +924,8 @@ class DatabaseWidget(tk.Frame):
                 token = os.environ.get(key)
                 if token:
                     break
-            # Also check ~/.auger/.env for tokens
-            env_file = _auger_home() / ".auger" / ".env"
+            # Also check the runtime .env for tokens
+            env_file = state_dir() / ".env"
             if not token and env_file.exists():
                 for line in env_file.read_text().splitlines():
                     line = line.strip()
@@ -960,7 +961,7 @@ class DatabaseWidget(tk.Frame):
             prompt_size = len(prompt.encode())
             # Write debug to file (print goes to /dev/null in GUI process)
             try:
-                dbg = _auger_home() / ".auger" / "aql_debug.log"
+                dbg = state_dir() / "aql_debug.log"
                 with open(dbg, "w") as f:
                     f.write(f"prompt_size={prompt_size}\nenv_size={env_size}\ncopilot={copilot_bin}\n")
                     f.write(f"PATH={os.environ.get('PATH','')}\n")
@@ -986,7 +987,7 @@ class DatabaseWidget(tk.Frame):
                 on_done(full)
             except Exception as e:
                 try:
-                    dbg = _auger_home() / ".auger" / "aql_debug.log"
+                    dbg = state_dir() / "aql_debug.log"
                     with open(dbg, "a") as f:
                         f.write(f"\nEXCEPTION: {e}\n")
                 except Exception:
@@ -1262,8 +1263,8 @@ class DatabaseWidget(tk.Frame):
                 messagebox.showerror("Error", f"Failed to export: {e}")
     
     def _load_selector_password(self):
-        """Read DB_SELECTOR_PASSWORD from ~/.auger/.env if present."""
-        env_file = os.path.join(os.path.expanduser('~'), '.auger', '.env')
+        """Read DB_SELECTOR_PASSWORD from the runtime .env if present."""
+        env_file = state_dir() / '.env'
         try:
             with open(env_file) as f:
                 for line in f:
@@ -1275,8 +1276,8 @@ class DatabaseWidget(tk.Frame):
         return None
 
     def _save_selector_password(self, password):
-        """Persist DB_SELECTOR_PASSWORD to ~/.auger/.env."""
-        env_file = os.path.join(os.path.expanduser('~'), '.auger', '.env')
+        """Persist DB_SELECTOR_PASSWORD to the runtime .env."""
+        env_file = state_dir() / '.env'
         try:
             lines = []
             try:
@@ -1317,7 +1318,7 @@ class DatabaseWidget(tk.Frame):
                     from tkinter import simpledialog
                     pwd = simpledialog.askstring(
                         "Selector Password",
-                        "Enter password for the 'selector' user:\n(saved to ~/.auger/.env — won't ask again)",
+                        f"Enter password for the 'selector' user:\n(saved to {state_dir() / '.env'} — won't ask again)",
                         show='*', parent=self
                     )
                     if not pwd:
@@ -1560,7 +1561,7 @@ class DatabaseWidget(tk.Frame):
         self.query_time_var.set(f"{affected} rows affected in {elapsed:.2f}s")
     
     def set_query(self, sql: str):
-        """Populate the query editor with SQL (called from Ask Auger)."""
+        """Populate the query editor with SQL (called from Ask Genny)."""
         self.query_text.delete('1.0', tk.END)
         self.query_text.insert('1.0', sql)
         try:
@@ -1584,7 +1585,7 @@ class DatabaseWidget(tk.Frame):
         self.results_label.config(text="Error")
 
     def build_context(self):
-        """Build context for Ask Auger panel"""
+        """Build context for the Ask Genny panel"""
         context = "DATABASE WIDGET CONTEXT\n\n"
         
         if self.current_connection:

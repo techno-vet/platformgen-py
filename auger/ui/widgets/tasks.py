@@ -9,10 +9,10 @@ from tkinter import ttk, messagebox
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 
 try:
-    from auger.ui.utils import add_treeview_menu, make_text_copyable, bind_mousewheel
+    from platformgen.ui.utils import add_treeview_menu, make_text_copyable, bind_mousewheel
 except ImportError:
     def add_treeview_menu(t, **kw): pass
     def make_text_copyable(t): pass

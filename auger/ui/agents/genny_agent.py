@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from auger.runtime import repo_dir, state_dir
+from platformgen.runtime import repo_dir, state_dir
 from dotenv import load_dotenv
 
 DEFAULT_MODEL = "qwen2.5-coder:14b"

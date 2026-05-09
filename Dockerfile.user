@@ -1,27 +1,27 @@
-# Auger Platform — User Personalization Layer
+# PlatformGen — User Personalization Layer
 #
-# Built locally by auger-launch.sh to match the host user's uid/gid.
+# Built locally by platformgen-launch.sh to match the host user's uid/gid.
 # This eliminates ALL host↔container permission mismatches permanently.
 #
 # How it works:
-#   1. Use the Auger base image from Artifactory or a locally built fallback
+#   1. Use the PlatformGen base image from Artifactory or a locally built fallback
 #   2. Create a user in the image with the host uid/gid
-#   3. Bake AUGER_HOST_HOME into the image so entrypoint.sh uses correct paths
+#   3. Bake PLATFORMGEN_HOST_HOME into the image so entrypoint.sh uses correct paths
 #
 # NOTE: The base image now installs all pip packages system-wide (/usr/local/lib/).
 # There is NO copy of /home/auger/ to the new user's home — that was the 10-15 min
 # slow step. This build now completes in ~30 seconds (just useradd + dirs).
 #
-# Called automatically by auger-launch.sh — never run directly.
+# Called automatically by platformgen-launch.sh — never run directly.
 #
 # To rebuild manually:
 #   docker build -f Dockerfile.user \
 #     --build-arg BASE_IMAGE=artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:latest \
-#     # or: --build-arg BASE_IMAGE=auger-platform:latest \
+#     # or: --build-arg BASE_IMAGE=platformgen-platform:latest \
 #     --build-arg HOST_USER=$(whoami) \
 #     --build-arg HOST_UID=$(id -u) \
 #     --build-arg HOST_GID=$(id -g) \
-#     -t auger-platform-$(whoami):latest .
+#     -t platformgen-platform-$(whoami):latest .
 
 ARG BASE_IMAGE=artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:latest
 FROM ${BASE_IMAGE}
@@ -55,7 +55,10 @@ RUN if [ "${HOST_UID}" != "1000" ]; then \
 COPY auger/ui/hot_reload.py /home/auger/auger-platform/auger_baked/ui/hot_reload.py
 
 # Bake host identity into image environment.
-# entrypoint.sh and auger-launch.sh read these to construct correct paths.
+# entrypoint.sh and platformgen-launch.sh read these to construct correct paths.
+ENV PLATFORMGEN_HOST_USER=${HOST_USER}
+ENV PLATFORMGEN_HOST_UID=${HOST_UID}
+ENV PLATFORMGEN_HOST_HOME=/home/${HOST_USER}
 ENV AUGER_HOST_USER=${HOST_USER}
 ENV AUGER_HOST_UID=${HOST_UID}
 ENV AUGER_HOST_HOME=/home/${HOST_USER}

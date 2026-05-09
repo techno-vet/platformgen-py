@@ -9,6 +9,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+try:
+    from platformgen.runtime import state_dir as runtime_state_dir
+except Exception:
+    runtime_state_dir = None
+
 
 def main() -> int:
     note = " ".join(sys.argv[1:]).strip()
@@ -16,8 +21,12 @@ def main() -> int:
         print("usage: write-platformgen-status.py <note>", file=sys.stderr)
         return 2
 
-    state_dir = Path(os.environ.get("AUGER_HOME") or os.environ.get("PLATFORMGEN_HOME") or (Path.home() / ".platformgen"))
-    history_dir = state_dir / "logs" / "chat_history"
+    state_root = (
+        runtime_state_dir()
+        if runtime_state_dir is not None
+        else Path(os.environ.get("PLATFORMGEN_HOME") or os.environ.get("AUGER_HOME") or (Path.home() / ".platformgen"))
+    )
+    history_dir = state_root / "logs" / "chat_history"
     history_dir.mkdir(parents=True, exist_ok=True)
     status_file = history_dir / "work_status.jsonl"
     entry = {

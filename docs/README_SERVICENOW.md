@@ -18,14 +18,14 @@ The ServiceNow widget provides a streamlined interface for interacting with your
 
 ## Configuration
 
-Set these in your `~/.auger/.env`:
+Set these in your `~/.platformgen/.env`:
 
 ```bash
 SERVICENOW_INSTANCE=your-instance.service-now.com
 SERVICENOW_USER=your.username
 ```
 
-## Ask Auger
+## Ask Genny
 
 > "show me my open ServiceNow incidents"
 > "create a change request in ServiceNow"

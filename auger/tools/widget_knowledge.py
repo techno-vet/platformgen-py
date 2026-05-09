@@ -1,11 +1,11 @@
 """
-widget_knowledge.py — WIDGET_AI_MANIFEST tools for Auger.
+widget_knowledge.py — WIDGET_AI_MANIFEST tools for PlatformGen.
 
 Two-tier knowledge architecture:
-  1. Static YAML   — auger/data/widget_manifests.yaml  (all widgets; Auger-editable)
-  2. Learned tier  — ~/.auger/widget_knowledge/{widget_name}.yaml  (runtime discoveries)
+  1. Static YAML   — auger/data/widget_manifests.yaml  (all widgets; repo-editable)
+  2. Learned tier  — ~/.platformgen/widget_knowledge/{widget_name}.yaml  (runtime discoveries)
 
-For NEW widgets (which Auger creates and owns, not root-owned legacy widgets):
+For NEW widgets (which PlatformGen creates and owns, not root-owned legacy widgets):
   The widget .py file should also define a WIDGET_AI_MANIFEST dict constant.
   This module will prefer the module constant if found, else fall back to YAML.
 
@@ -19,16 +19,29 @@ import yaml
 from pathlib import Path
 from datetime import datetime
 
-_LEARNED_DIR = Path.home() / ".auger" / "widget_knowledge"
+from platformgen.runtime import repo_dir, state_dir
+
+_LEARNED_DIR = state_dir() / "widget_knowledge"
 
 _YAML_CANDIDATES = [
     Path(__file__).parent.parent / "data" / "widget_manifests.yaml",
-    Path.home() / "repos" / "auger-ai-sre-platform" / "auger" / "data" / "widget_manifests.yaml",
 ]
+
+_repo = repo_dir()
+if _repo:
+    _YAML_CANDIDATES.extend([
+        _repo / "auger" / "data" / "widget_manifests.yaml",
+        _repo / "platformgen" / "data" / "widget_manifests.yaml",
+    ])
 
 
 def _load_yaml_manifests() -> dict:
+    seen: set[Path] = set()
     for path in _YAML_CANDIDATES:
+        path = Path(path)
+        if path in seen:
+            continue
+        seen.add(path)
         if path.exists():
             try:
                 data = yaml.safe_load(path.read_text()) or {}
@@ -52,7 +65,7 @@ def save_learned(widget_name: str,
                  discoveries: list[str] | None = None,
                  usage_patterns: list[str] | None = None) -> None:
     """
-    Persist Auger-discovered knowledge to the learned tier.
+    Persist PlatformGen-discovered knowledge to the learned tier.
     Merges with existing data — never overwrites prior discoveries.
     """
     _LEARNED_DIR.mkdir(parents=True, exist_ok=True)

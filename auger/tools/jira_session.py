@@ -1,20 +1,15 @@
 """
 Jira Session Manager
 Cookie-based authentication for gsa-standard.atlassian-us-gov-mod.net (PIV/MFA).
-Cookies are captured via Selenium (jira_auto_login.py) and stored in ~/.auger/.env.
+Cookies are captured via Selenium (jira_auto_login.py) and stored in the runtime .env.
 """
 import os
 import json
 import requests
-from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv, set_key
 from urllib.parse import urlparse
-
-try:
-    from auger.ui.utils import auger_home as _auger_home
-except ImportError:
-    def _auger_home(): return Path.home()
+from platformgen.runtime import state_dir
 
 
 class JiraSession:
@@ -23,7 +18,7 @@ class JiraSession:
     DEFAULT_URL = 'https://gsa-standard.atlassian-us-gov-mod.net'
 
     def __init__(self, instance_url: str | None = None):
-        self.env_file = _auger_home() / '.auger' / '.env'
+        self.env_file = state_dir() / '.env'
         load_dotenv(self.env_file, override=True)
         self.instance_url = (instance_url or
                              os.getenv('JIRA_URL', self.DEFAULT_URL)).rstrip('/')
@@ -193,7 +188,7 @@ class JiraSession:
 
 def shared_atlassian_session(instance_url: str | None = None) -> requests.Session:
     """Return a requests session seeded with saved Jira/Atlassian MFA cookies."""
-    env_file = _auger_home() / '.auger' / '.env'
+    env_file = state_dir() / '.env'
     load_dotenv(env_file, override=True)
 
     target_url = (instance_url or os.getenv('JIRA_URL', JiraSession.DEFAULT_URL)).rstrip('/')

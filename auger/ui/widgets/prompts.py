@@ -2,7 +2,7 @@
 Prompts Widget — parameterized prompt/command library.
 
 Loads prompts from (in priority order):
-  1. ~/.auger/prompts.yaml  (user overrides / additions)
+  1. runtime prompts.yaml  (user overrides / additions)
   2. <repo>/config/prompts.yaml  (repo defaults shipped with app)
 
 Prompts with the same id in the user file override repo defaults.
@@ -17,8 +17,9 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import yaml
 
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.runtime import daemon_port, state_dir
 
 try:
     from PIL import Image as _PILImage, ImageDraw as _PILImageDraw, ImageTk as _PILImageTk
@@ -106,7 +107,7 @@ def _make_pr_standards_icon(size=14, color='#ce9178'):
 # Falls back to repo config/ for dev/editable installs
 _PKG_DATA       = Path(__file__).resolve().parents[2] / "data" / "prompts.yaml"
 _REPO_PROMPTS   = _PKG_DATA if _PKG_DATA.exists() else Path(__file__).resolve().parents[3] / "config" / "prompts.yaml"
-_USER_PROMPTS  = Path.home() / ".auger" / "prompts.yaml"
+_USER_PROMPTS  = state_dir() / "prompts.yaml"
 _REPOS_DIR     = Path.home() / "repos"
 
 # ── Release branch validation ─────────────────────────────────────────────────
@@ -699,7 +700,7 @@ class PromptsWidget(tk.Frame):
             self._edit_listbox.see(idx)
 
     def _is_user_prompt(self, pid):
-        """Returns True if this id exists in ~/.auger/prompts.yaml."""
+        """Returns True if this id exists in the runtime prompts.yaml."""
         if not _USER_PROMPTS.exists():
             return False
         try:
@@ -734,7 +735,7 @@ class PromptsWidget(tk.Frame):
         self._edit_is_dirty   = False
 
         is_user = self._is_user_prompt(pid)
-        src_txt = "user override  (~/.auger/prompts.yaml)" if is_user else "repo default  (config/prompts.yaml)"
+        src_txt = f"user override  ({_USER_PROMPTS})" if is_user else "repo default  (config/prompts.yaml)"
         self._edit_title.config(text=p.get("name", pid))
         self._edit_source_label.config(
             text=f"[{src_txt}]",
@@ -829,7 +830,7 @@ class PromptsWidget(tk.Frame):
         self._edit_is_new     = True
         self._edit_is_dirty   = True
         self._edit_title.config(text="New Prompt")
-        self._edit_source_label.config(text="[will save to ~/.auger/prompts.yaml]", fg=GREEN)
+        self._edit_source_label.config(text=f"[will save to {_USER_PROMPTS}]", fg=GREEN)
         self._yaml_editor.delete("1.0", tk.END)
         self._yaml_editor.insert(tk.END, template)
         self._yaml_err_label.config(text="")
@@ -866,7 +867,7 @@ class PromptsWidget(tk.Frame):
         self._set_edit_status("Changes discarded")
 
     def _save_prompt(self):
-        """Parse YAML from editor and save to ~/.auger/prompts.yaml."""
+        """Parse YAML from editor and save to the runtime prompts.yaml."""
         raw = self._yaml_editor.get("1.0", tk.END).strip()
         try:
             data = yaml.safe_load(raw)
@@ -894,7 +895,7 @@ class PromptsWidget(tk.Frame):
         self._set_edit_status(f"✅ Saved '{prompt.get('name', pid)}'")
 
     def _save_user_file(self, upsert_prompt=None, delete_id=None):
-        """Read ~/.auger/prompts.yaml, upsert or delete a prompt, write back."""
+        """Read runtime prompts.yaml, upsert or delete a prompt, write back."""
         _USER_PROMPTS.parent.mkdir(parents=True, exist_ok=True)
         if _USER_PROMPTS.exists():
             try:
@@ -1464,9 +1465,14 @@ class PromptsWidget(tk.Frame):
         import json
         import http.client
 
-        out_file = str(Path.home() / ".auger" / "prompt_stream.log")
+        out_path = state_dir() / "prompt_stream.log"
+        out_file = str(out_path)
         full_cmd = f"{cmd} > {out_file} 2>&1"
-        host_file = f"/host/home/{Path.home().name}/.auger/prompt_stream.log"
+        try:
+            home_rel = out_path.relative_to(Path.home())
+            host_file = str(Path("/host") / Path.home().relative_to("/") / home_rel)
+        except ValueError:
+            host_file = str(Path("/host") / out_path.relative_to("/"))
 
         def spawn():
             try:
@@ -1485,7 +1491,7 @@ class PromptsWidget(tk.Frame):
                     "tool": "_prompt_run"
                 }).encode()
 
-                conn = http.client.HTTPConnection("localhost", 7437, timeout=5)
+                conn = http.client.HTTPConnection("localhost", daemon_port(), timeout=5)
                 conn.request("POST", "/cmd",
                              body=payload_reg,
                              headers={"Content-Type": "application/json"})

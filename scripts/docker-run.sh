@@ -17,12 +17,19 @@ if [ "$#" -eq 0 ]; then
     exec bash "$SCRIPT_DIR/platformgen-launch.sh"
 fi
 
-IMAGE="${1:-auger-platform:latest}"
-CONTAINER_NAME="auger-platform"
+LOCAL_BASE_IMAGE="${PLATFORMGEN_LOCAL_BASE_IMAGE:-${AUGER_LOCAL_BASE_IMAGE:-platformgen-platform:latest}}"
+LEGACY_LOCAL_BASE_IMAGE="${AUGER_LOCAL_BASE_IMAGE_LEGACY:-auger-platform:latest}"
+IMAGE="${1:-$LOCAL_BASE_IMAGE}"
+CONTAINER_NAME="${PLATFORMGEN_CONTAINER_NAME:-${AUGER_CONTAINER_NAME:-platformgen-platform}}"
 AUGER_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
+DAEMON_PORT="${PLATFORMGEN_DAEMON_PORT:-${AUGER_DAEMON_PORT:-7438}}"
 
-# Canonical repo location: prefer ~/repos, fall back to script's own directory
-if [ -d "$HOME/repos/auger-ai-sre-platform" ]; then
+# Canonical repo location: prefer current PlatformGen checkout locations, fall back to script's own directory
+if [ -d "$HOME/repos/platformgen-py" ]; then
+    CANON_REPO="$HOME/repos/platformgen-py"
+elif [ -d "$HOME/projects/platformgen-py" ]; then
+    CANON_REPO="$HOME/projects/platformgen-py"
+elif [ -d "$HOME/repos/auger-ai-sre-platform" ]; then
     CANON_REPO="$HOME/repos/auger-ai-sre-platform"
 else
     CANON_REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,7 +38,7 @@ fi
 # If using the local image and a Dockerfile is present, rebuild only when
 # build-affecting files change (Dockerfile, requirements, etc.) — NOT on every git commit.
 # All Python/widget code is live via volume mount and never needs a rebuild.
-if [ "$IMAGE" = "auger-platform:latest" ] && [ -f "$CANON_REPO/Dockerfile" ]; then
+if { [ "$IMAGE" = "$LOCAL_BASE_IMAGE" ] || [ "$IMAGE" = "$LEGACY_LOCAL_BASE_IMAGE" ]; } && [ -f "$CANON_REPO/Dockerfile" ]; then
     REPO_DIR="$CANON_REPO"
 
     # Hash only the files that actually affect the Docker image
@@ -66,6 +73,9 @@ if [ "$IMAGE" = "auger-platform:latest" ] && [ -f "$CANON_REPO/Dockerfile" ]; th
     else
         echo "[OK] Image up to date (build hash: ${BUILD_HASH}) — skipping rebuild"
     fi
+    if [ "$IMAGE" = "$LEGACY_LOCAL_BASE_IMAGE" ] && docker image inspect "$LOCAL_BASE_IMAGE" >/dev/null 2>&1; then
+        IMAGE="$LOCAL_BASE_IMAGE"
+    fi
 fi
 
 # ─── Host: ensure PlatformGen CLI is available ───────────────────────────────
@@ -95,13 +105,13 @@ if [ -z "$_host_cli" ]; then
     echo "  platformgen (or legacy auger) to be installed on the host."
     echo ""
     echo "  Install it now?"
-    echo "  pip3 install --user auger-platform"
-    echo "  (or: pip3 install --user git+https://github.com/your-org/auger-ai-sre-platform.git)"
+    echo "  pip3 install --user -e \"$CANON_REPO\""
+    echo "  (or install package name: pip3 install --user platformgen-py)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     read -r -p "  Auto-install with pip3? [y/N] " _ans
     if [[ "${_ans,,}" == "y" ]]; then
-        pip3 install --user auger-platform && echo "[OK] PlatformGen CLI installed" || echo "[WARN]  Install failed — continuing without host CLI"
+        pip3 install --user -e "$CANON_REPO" && echo "[OK] PlatformGen CLI installed" || echo "[WARN]  Install failed — continuing without host CLI"
     else
         echo "[WARN]  Skipping host CLI install — Ask Genny host session won't be shared"
     fi
@@ -161,14 +171,14 @@ fi
 # launch, and Jira MFA auth are available the moment the UI opens.
 DAEMON_SCRIPT="$SCRIPT_DIR/host_tools_daemon.py"
 if [ -f "$DAEMON_SCRIPT" ]; then
-    OLD_DAEMON=$(lsof -ti tcp:7437 2>/dev/null | head -1)
+    OLD_DAEMON=$(lsof -ti "tcp:${DAEMON_PORT}" 2>/dev/null | head -1)
     [ -n "$OLD_DAEMON" ] && kill "$OLD_DAEMON" 2>/dev/null && sleep 1
-    echo "[NET] Starting Host Tools daemon on port 7437..."
+    echo "[NET] Starting Host Tools daemon on port ${DAEMON_PORT}..."
     nohup python3 "$DAEMON_SCRIPT" > "$AUGER_DIR/daemon.log" 2>&1 &
     DAEMON_PID=$!
     disown $DAEMON_PID
     for i in $(seq 1 20); do
-        if curl -sf --noproxy localhost http://localhost:7437/health >/dev/null 2>&1; then
+        if curl -sf --noproxy localhost "http://localhost:${DAEMON_PORT}/health" >/dev/null 2>&1; then
             echo "[OK] Daemon ready (PID $DAEMON_PID)"
             echo "$DAEMON_PID" > "$AUGER_DIR/daemon.pid"
             break
@@ -194,15 +204,17 @@ COPILOT_BIN_MOUNT=""
 [ -x "$HOME/.local/bin/copilot" ] && COPILOT_BIN_MOUNT="-v $HOME/.local/bin/copilot:/usr/local/bin/copilot:ro"
 docker run -d \
   --name "$CONTAINER_NAME" \
-  --hostname auger-platform \
+  --hostname platformgen-platform \
   --user root \
   --network host \
   ${DNS_ARGS} \
+  # Base images still use the legacy in-container home layout for compatibility.
   -e HOME=/home/auger \
   -e PATH=/home/auger/.local/bin:/usr/local/bin:/usr/bin:/bin \
   -e HOST_UID="$HOST_UID" \
   -e HOST_GID="$HOST_GID" \
   -e HOST_USER="$(id -un 2>/dev/null || echo hostuser)" \
+  -e PLATFORMGEN_USE_LIVE_REPO=1 \
   -e AUGER_USE_LIVE_REPO=1 \
   ${_COPILOT_TOKEN:+-e GH_TOKEN="$_COPILOT_TOKEN"} \
   ${_COPILOT_TOKEN:+-e GITHUB_TOKEN="$_COPILOT_TOKEN"} \

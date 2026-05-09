@@ -8,9 +8,10 @@ path simply activates that tab instead of creating a duplicate.
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
-from auger.ui.help_docs import all_docs as _all_docs
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.ui.help_docs import all_docs as _all_docs
+from platformgen.runtime import assistant_name
 
 BG     = '#1e1e1e'
 BG2    = '#252526'
@@ -72,7 +73,7 @@ class HelpViewerWidget(tk.Frame):
             pass
         tk.Label(hdr, text="Help & Documentation",
                  font=('Segoe UI', 12, 'bold'), fg=ACCENT2, bg=BG2).pack(side=tk.LEFT, pady=6)
-        tk.Label(hdr, text="  Tip: Ask Auger anything — just type in the chat below",
+        tk.Label(hdr, text=f"  Tip: Ask {assistant_name()} anything — just type in the chat below",
                  font=('Segoe UI', 9, 'italic'), fg=SUBTLE, bg=BG2).pack(side=tk.LEFT, pady=6)
 
         # Dropdown selector on the right side of header
@@ -135,7 +136,7 @@ class HelpViewerWidget(tk.Frame):
                  font=('Segoe UI', 14, 'bold'), fg=ACCENT2, bg=BG).pack()
         tk.Label(f,
                  text="Select a topic from the Help menu  or  Widgets → Help\n\n"
-                      "Or just Ask Auger — type your question in the chat below.",
+                      f"Or just Ask {assistant_name()} — type your question in the chat below.",
                  font=('Segoe UI', 10), fg=SUBTLE, bg=BG, justify=tk.CENTER).pack(pady=12)
         return f
 

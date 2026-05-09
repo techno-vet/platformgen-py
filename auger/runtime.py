@@ -35,13 +35,21 @@ def cli_name() -> str:
 
 def daemon_port() -> int:
     try:
-        return int(_env("PLATFORMGEN_DAEMON_PORT", "AUGER_DAEMON_PORT", default="7437"))
+        return int(_env("PLATFORMGEN_DAEMON_PORT", "AUGER_DAEMON_PORT", default="7438"))
     except ValueError:
-        return 7437
+        return 7438
 
 
 def daemon_url() -> str:
     return f"http://localhost:{daemon_port()}"
+
+
+def host_home() -> Path:
+    for key in ("PLATFORMGEN_HOST_HOME", "AUGER_HOST_HOME", "HOME"):
+        value = os.environ.get(key)
+        if value and value != "/home/auger":
+            return Path(value).expanduser()
+    return Path.home()
 
 
 def window_class() -> str:

@@ -40,8 +40,8 @@ try:
 except ImportError:
     _PIL_OK = False
 
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
 
 BG      = '#1e1e1e'
 BG2     = '#252526'
@@ -707,7 +707,7 @@ class JiraWidget(tk.Frame):
         """Open a URL in Chrome on the host via the host tools daemon."""
         def _run():
             try:
-                from auger.tools.host_cmd import open_url
+                from platformgen.tools.host_cmd import open_url
                 open_url(url)
             except Exception as e:
                 self._q(lambda: self._status_var.set(f'ERROR: Could not open URL: {e}'))

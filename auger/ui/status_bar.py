@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 
-from auger.runtime import app_name, daemon_url, repo_dir, state_dir
+from platformgen.runtime import app_name, daemon_url, repo_dir, state_dir
 
 try:
     from zoneinfo import ZoneInfo
@@ -81,7 +81,7 @@ def _daemon_ok():
 
 def _read_image_tag():
     import os
-    tag = os.environ.get("AUGER_IMAGE_TAG", "")
+    tag = os.environ.get("PLATFORMGEN_IMAGE_TAG") or os.environ.get("AUGER_IMAGE_TAG", "")
     if not tag:
         for p in [Path("/.docker-image-tag"), state_dir() / "image_tag", Path.home() / ".auger" / "image_tag"]:
             try:

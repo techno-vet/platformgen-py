@@ -187,7 +187,7 @@ def make_s3_client(
     aws_secret_access_key = str(secret_key or settings["secret_key"]).strip()
     aws_region = str(region or settings["region"]).strip() or DEFAULT_REGION
     if not aws_access_key_id or not aws_secret_access_key:
-        raise PaydirtError("Missing DEV S3 AWS credentials in ~/.auger/.env")
+        raise PaydirtError("Missing DEV S3 AWS credentials in ~/.platformgen/.env")
     return boto3.Session(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_access_key,

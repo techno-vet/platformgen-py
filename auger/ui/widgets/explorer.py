@@ -5,7 +5,7 @@ Browse and view files on all mounted volumes and local container filesystem.
 Mounts surfaced:
   /host          → full host root (read-only, via AUGER_HOST_ROOT or /host)
   ~/repos        → git repositories
-  ~/.auger       → auger config / shared history
+  runtime state  → PlatformGen config / shared history
   ~/.copilot     → copilot session state
   ~/.kube        → kubeconfig
   /              → container root (local files)
@@ -18,11 +18,12 @@ import stat
 import threading
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
 from pathlib import Path
 from datetime import datetime
 
-from auger.ui import icons as _icons
+from platformgen.ui import icons as _icons
+from platformgen.runtime import state_dir
 
 # ── Theme colours ──────────────────────────────────────────────────────────────
 BG  = '#1e1e1e'
@@ -70,13 +71,14 @@ def _bookmarks() -> list[tuple[str, Path]]:
     """Return (label, path) for key mount points that exist."""
     host_root = Path(os.environ.get('AUGER_HOST_ROOT', '/host'))
     home = Path.home()
+    runtime_state = state_dir()
     candidates = [
         ('Host Root (/host)',       host_root),
         ('Host ~/repos',           host_root / home.relative_to('/') / 'repos'
                                    if host_root != Path('/') else home / 'repos'),
-        ('Container /home/auger',  Path('/home/auger')),
+        ('Container Home',         home),
         ('Repos (in container)',   home / 'repos'),
-        ('~/.auger',               home / '.auger'),
+        (f'Runtime State ({runtime_state.name})', runtime_state),
         ('~/.copilot',             home / '.copilot'),
         ('~/.kube',                home / '.kube'),
         ('Container Root (/)',     Path('/')),
@@ -423,7 +425,7 @@ class ExplorerWidget(tk.Frame):
         """Fetch registered host tools from daemon in background."""
         def _thread():
             try:
-                from auger.tools.host_cmd import list_tools
+                from platformgen.tools.host_cmd import list_tools
                 tools = list_tools()
                 self.after(0, lambda: setattr(self, '_tools_cache', tools))
             except Exception:
@@ -436,7 +438,7 @@ class ExplorerWidget(tk.Frame):
 
         /host/home/user/...  →  /home/user/...
         /host                →  /
-        /home/auger/repos/x  →  same (already host-relative inside container)
+        /home/<container-user>/repos/x  →  same (already host-relative inside container)
         """
         p = container_path
         if p.startswith('/host/'):
@@ -519,7 +521,7 @@ class ExplorerWidget(tk.Frame):
         """Send open_path command to daemon in background."""
         def _thread():
             try:
-                from auger.tools.host_cmd import open_path
+                from platformgen.tools.host_cmd import open_path
                 result = open_path(tool_key, path_str)
                 msg = result.get('message', '')
                 if result.get('status') == 'ok':
@@ -546,7 +548,7 @@ class ExplorerWidget(tk.Frame):
         self._status_var.set("Detecting host tools…")
         def _thread():
             try:
-                from auger.tools.host_cmd import auto_detect_tools
+                from platformgen.tools.host_cmd import auto_detect_tools
                 tools = auto_detect_tools()
                 self.after(0, lambda: setattr(self, '_tools_cache', tools))
                 self.after(0, lambda: self._status_var.set(

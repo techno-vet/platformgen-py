@@ -13,13 +13,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk, messagebox
 
-from auger.runtime import product_name, state_dir, window_class
-from auger.ui.content_area import ContentArea
-from auger.ui.ask_genny import AskGennyPanel
-from auger.ui.hot_reload import HotReloader
-from auger.ui.first_run import maybe_show_wizard
-from auger.ui.status_bar import PlatformGenStatusBar
-from auger.ui.help_docs import DOCS_DIR as _DOCS_DIR, WIDGET_DOCS as _WIDGET_DOCS_RAW, GENERAL_DOCS as _GENERAL_DOCS
+from platformgen.runtime import daemon_port, product_name, state_dir, window_class
+from platformgen.ui.content_area import ContentArea
+from platformgen.ui.ask_genny import AskGennyPanel
+from platformgen.ui.hot_reload import HotReloader
+from platformgen.ui.first_run import maybe_show_wizard
+from platformgen.ui.status_bar import PlatformGenStatusBar
+from platformgen.ui.help_docs import DOCS_DIR as _DOCS_DIR, WIDGET_DOCS as _WIDGET_DOCS_RAW, GENERAL_DOCS as _GENERAL_DOCS
 
 # Adapt widget docs list to legacy 3-tuple format used by menu building code
 _WIDGET_DOCS = [(label, fname, None) for label, fname in _WIDGET_DOCS_RAW]
@@ -72,7 +72,7 @@ class PlatformGenApp(tk.Tk):
         # Set window icon (titlebar + taskbar/dock).
         # Save PNG to tmp then load with tk.PhotoImage — most reliable on X11.
         try:
-            from auger.ui.icons import load_app_icon
+            from platformgen.ui.icons import load_app_icon
             import tempfile, os
             _icon_img = load_app_icon(256).convert("RGBA")
             _icon_tmp = os.path.join(os.fspath(state_dir()), "app_icon.png")
@@ -111,6 +111,7 @@ class PlatformGenApp(tk.Tk):
         self._activation_server = None
         self._activation_stop = threading.Event()
         self._start_activation_listener()
+        self.after(250, self._activate_window)
 
         # Override Tk's callback exception handler to surface widget crashes
         self._in_exception_handler = False
@@ -635,7 +636,7 @@ class PlatformGenApp(tk.Tk):
         import threading
         def _check():
             try:
-                from auger.tools.host_cmd import list_tools
+                from platformgen.tools.host_cmd import list_tools
                 tools = list_tools()
                 if tools:
                     from auger.ui.widgets.host_tools import HostToolsWidget
@@ -665,7 +666,7 @@ class PlatformGenApp(tk.Tk):
             f"## Restart instructions\n"
             f"- If your fix is ONLY in `auger/ui/widgets/*.py` → no restart needed (hot-reload picks it up)\n"
             f"- If your fix touches `auger/app.py` or `auger/ui/content_area.py` → end your response by calling:\n"
-            f"  `curl --noproxy localhost -X POST http://localhost:7437/schedule_restart "
+            f"  `curl --noproxy localhost -X POST http://localhost:{daemon_port()}/schedule_restart "
             f"-H 'Content-Type: application/json' -d '{{\"delay\": 5}}'`\n"
             f"  This will deliver your response first, then restart the platform cleanly.\n"
             f"  Alternatively, the user can click 🔄 Restart Platform on the crash overlay."
@@ -742,7 +743,7 @@ class PlatformGenApp(tk.Tk):
                 "## Restart instructions\n"
                 "- Fix in `auger/ui/widgets/*.py` only → no restart needed\n"
                 "- Fix in `auger/app.py` or `auger/ui/content_area.py` → call:\n"
-                "  `curl --noproxy localhost -X POST http://localhost:7437/schedule_restart "
+                f"  `curl --noproxy localhost -X POST http://localhost:{daemon_port()}/schedule_restart "
                 "-H 'Content-Type: application/json' -d '{\"delay\": 5}'`\n"
                 "  This delivers your response first, then restarts cleanly."
             )

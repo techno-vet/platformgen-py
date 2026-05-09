@@ -11,13 +11,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
-AUGER_DIR="${AUGER_HOME:-$HOME/.platformgen}"
-ENV_FILE="$AUGER_DIR/.env"
+STATE_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
+ENV_FILE="$STATE_DIR/.env"
+export PLATFORMGEN_HOME="$STATE_DIR"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ASTUTL_ENV="$HOME/.astutl/astutl_secure_config.env"
 ART_REGISTRY="artifactory.helix.gsa.gov"
-APP_NAME="${AUGER_APP_NAME:-PlatformGen}"
-ASSISTANT_NAME="${AUGER_ASSISTANT_NAME:-Genny}"
+APP_NAME="${PLATFORMGEN_APP_NAME:-${AUGER_APP_NAME:-PlatformGen}}"
+ASSISTANT_NAME="${PLATFORMGEN_ASSISTANT_NAME:-${AUGER_ASSISTANT_NAME:-Genny}}"
 
 # Parse --venv flag
 FORCE_VENV=0
@@ -31,7 +32,7 @@ echo "║         ${APP_NAME} — First-Time Setup                ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 
-mkdir -p "$AUGER_DIR"
+mkdir -p "$STATE_DIR"
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 

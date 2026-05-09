@@ -1,25 +1,25 @@
 """
-host_cmd.py - Send commands to the Auger Host Tools HTTP Daemon.
+host_cmd.py - Send commands to the PlatformGen Host Tools HTTP Daemon.
 
 The daemon (scripts/host_tools_daemon.py) runs on the host as an HTTP server
-on localhost:7437. Since the container uses --network host, both container
+on localhost using the configured PlatformGen daemon port. Since the container uses --network host, both container
 and host share localhost, so no special routing is needed.
 
 Usage:
-    from auger.tools.host_cmd import open_url, launch_tool, find_tool
+    from platformgen.tools.host_cmd import open_url, launch_tool, find_tool
 """
 
 import json
 import urllib.request
 import urllib.error
 from pathlib import Path
+from platformgen.runtime import daemon_url, state_dir
 
-DAEMON_URL = 'http://localhost:7437'
+DAEMON_URL = daemon_url()
 TIMEOUT = 10.0          # seconds for normal commands
 STREAM_TIMEOUT = 660.0  # 11 min for long-running (ServiceNow MFA)
 
-AUGER_DIR = Path.home() / '.auger'
-HOST_TOOLS_FILE = AUGER_DIR / 'host_tools.json'
+HOST_TOOLS_FILE = state_dir() / 'host_tools.json'
 
 
 # ── Core HTTP helpers ─────────────────────────────────────────────────────────

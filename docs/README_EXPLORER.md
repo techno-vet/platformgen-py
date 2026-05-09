@@ -1,6 +1,6 @@
 # Explorer Widget
 
-The **Explorer** widget is a file system browser that gives you a unified view of all volumes mounted in the Auger container — including your full host filesystem, git repos, kubeconfig, and Auger config.
+The **Explorer** widget is a file system browser that gives you a unified view of all volumes mounted in the PlatformGen container — including your full host filesystem, git repos, kubeconfig, and runtime config.
 
 ## Mounted Paths
 
@@ -8,10 +8,10 @@ The **Explorer** widget is a file system browser that gives you a unified view o
 |-------|-------------|
 | `/host` | Full host root filesystem (read-only) |
 | `~/repos` | Your git repositories (`$HOME/repos` on the host) |
-| `~/.auger` | Auger config, `.env`, tasks DB, logs |
+| `~/.platformgen` | Runtime config, `.env`, tasks DB, logs |
 | `~/.copilot` | GitHub Copilot session state |
 | `~/.kube` | Kubernetes config files |
-| `/` | Container root (installed packages, Auger source) |
+| `/` | Container root (installed packages, PlatformGen source) |
 
 ## Features
 
@@ -23,9 +23,9 @@ The **Explorer** widget is a file system browser that gives you a unified view o
 
 ## Use Cases
 
-- Browse log files in `~/.auger/logs/`
+- Browse log files in `~/.platformgen/logs/`
 - Inspect kubeconfig at `~/.kube/config`
 - View repo structure before making changes
-- Check Auger widget source code at `~/repos/auger-ai-sre-platform/auger/ui/widgets/`
+- Check widget source code in your PlatformGen checkout, for example `~/projects/platformgen-py/auger/ui/widgets/`
 
 > **Tip:** The host filesystem is at `/host` — so `/host/etc/hosts` is your host's `/etc/hosts`.

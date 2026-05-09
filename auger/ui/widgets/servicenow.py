@@ -7,9 +7,9 @@ from pathlib import Path
 from datetime import datetime
 import sys
 
-from auger.tools.servicenow_session import ServiceNowSession
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.tools.servicenow_session import ServiceNowSession
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
 
 # Auger Platform Colors
 BG = '#1e1e1e'
@@ -352,7 +352,7 @@ class ServiceNowWidget(tk.Frame):
 
         def login_thread():
             try:
-                from auger.tools.host_cmd import servicenow_login_stream
+                from platformgen.tools.host_cmd import servicenow_login_stream
                 for event in servicenow_login_stream():
                     evt_type = event.get('type', 'progress')
                     msg = event.get('message', '')

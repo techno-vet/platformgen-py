@@ -817,7 +817,7 @@ def load_app_icon(size: int = 256) -> Image.Image:
 def install_app_icon(icon_path: str = None) -> str:
     """Save the bundled application icon to icon_path (default ~/.local/share/icons/)."""
     if icon_path is None:
-        dest = Path.home() / ".local" / "share" / "icons" / "auger-platform.png"
+        dest = Path.home() / ".local" / "share" / "icons" / "platformgen-platform.png"
     else:
         dest = Path(icon_path)
     dest.parent.mkdir(parents=True, exist_ok=True)

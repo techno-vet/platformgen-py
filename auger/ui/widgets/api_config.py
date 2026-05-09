@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 import requests
 from PIL import Image, ImageDraw, ImageTk
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 try:
-    from auger.ui.utils import auger_home as _auger_home
+    from platformgen.ui.utils import auger_home as _auger_home
 except ImportError:
     def _auger_home(): return Path.home()
 
@@ -1896,7 +1896,7 @@ class APIConfigWidget(tk.Frame):
             text=(
                 "Shared by Cryptkeeper and Cryptkeeper Lite widgets. "
                 "Saved as PROD_CRYPTKEEPER_KEY, STAGING_CRYPTKEEPER_KEY, TEST_CRYPTKEEPER_KEY, "
-                "DEV_CRYPTKEEPER_KEY, LOCAL_CRYPTKEEPER_KEY in ~/.auger/.env. "
+                "DEV_CRYPTKEEPER_KEY, LOCAL_CRYPTKEEPER_KEY in ~/.platformgen/.env. "
                 "Obtain keys from your team’s secure vault."
             ),
             font=('Segoe UI', 8, 'italic'),

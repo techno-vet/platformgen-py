@@ -7,7 +7,7 @@ import urllib.request
 
 from dotenv import dotenv_values
 
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 
 PROVIDER_COPILOT = "copilot"
 PROVIDER_OPENAI = "openai"

@@ -1,10 +1,10 @@
 # Host Tools Widget
 
-The Host Tools widget lets you launch and manage applications installed on your **host machine** directly from inside the Auger container.
+The Host Tools widget lets you launch and manage applications installed on your **host machine** directly from inside the PlatformGen container.
 
 ## Overview
 
-Since Auger runs in a Docker container with `--network host`, it communicates with a lightweight **Host Tools Daemon** running on your host to launch GUI apps, open URLs, and manage registered tools.
+Since PlatformGen runs in a Docker container with `--network host`, it communicates with a lightweight **Host Tools Daemon** running on your host to launch GUI apps, open URLs, and manage registered tools.
 
 ## Features
 
@@ -35,7 +35,7 @@ Click **Auto-Detect** at any time to re-scan.
 
 1. Click **+ Add Tool** to register a known tool or enter a custom command
 2. Or click **From Launcher** to browse all `.desktop` apps on your host
-3. Tools are saved to `~/.auger/host_tools.json`
+3. Tools are saved to `~/.platformgen/host_tools.json`
 
 ## Tool Icons
 
@@ -52,7 +52,7 @@ The **Host Tools Daemon** must be running on your host. It is started automatica
 python3 scripts/host_tools_daemon.py
 ```
 
-## Ask Auger
+## Ask Genny
 
 > "add a custom tool to host tools"
 > "why isn't my tool launching?"

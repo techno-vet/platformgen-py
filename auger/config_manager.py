@@ -9,7 +9,7 @@ import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv, set_key
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 
 
 class AugerConfigManager:

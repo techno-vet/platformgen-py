@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterable
 
 try:
-    from auger.ui.utils import auger_home as _auger_home
+    from platformgen.ui.utils import auger_home as _auger_home
 except ImportError:
     def _auger_home():  # type: ignore[no-redef]
         return Path.home()

@@ -1,5 +1,5 @@
 """
-GitHub Widget - Repository browser and management for Auger
+GitHub Widget - Repository browser and management for PlatformGen
 Provides repository browsing, issues, PRs, commits, and actions monitoring
 """
 
@@ -11,8 +11,9 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.runtime import state_dir
 
 try:
     from tksheet import Sheet as _Sheet
@@ -60,7 +61,8 @@ class GitHubWidget(tk.Frame):
         self.github_client = None
         self.current_repo = None
         self.current_user = None
-        self.token_file = os.path.join(os.path.expanduser('~'), '.auger_github_token')
+        self.token_file = str(state_dir() / ".github_token")
+        self.legacy_token_file = os.path.join(os.path.expanduser('~'), '.auger_github_token')
         self._selected_open_pr = None        # (repo_name, pr_number)
         self._selected_open_pr_obj = None    # cached PyGitHub PR object
         self._loaded_open_pr_target = None   # last PR whose detail pane finished loading
@@ -1923,7 +1925,7 @@ class GitHubWidget(tk.Frame):
         url = self._selected_pr_file.get('blob_url')
         if not url:
             return
-        from auger.tools.host_cmd import open_url as _open_url
+        from platformgen.tools.host_cmd import open_url as _open_url
         _open_url(url)
 
     def _row_data_to_open_pr_target(self, row_data):
@@ -2190,7 +2192,7 @@ class GitHubWidget(tk.Frame):
     def _open_selected_pr_in_browser(self):
         """Open the selected PR in the host browser."""
         if self._selected_open_pr_obj:
-            from auger.tools.host_cmd import open_url as _open_url
+            from platformgen.tools.host_cmd import open_url as _open_url
             _open_url(self._selected_open_pr_obj.html_url)
 
     def _schedule_open_prs_refresh(self):
@@ -2235,17 +2237,20 @@ To generate a new token:
 """
         messagebox.showinfo("GitHub Token Help", msg)
         ghe_url = os.getenv('GHE_URL', 'https://github.helix.gsa.gov')
-        from auger.tools.host_cmd import open_url as _open_url; _open_url(f"{ghe_url}/settings/tokens")
+        from platformgen.tools.host_cmd import open_url as _open_url; _open_url(f"{ghe_url}/settings/tokens")
     
     def _load_saved_token(self):
         """Load saved GitHub token"""
-        if os.path.exists(self.token_file):
+        for token_file in (self.token_file, self.legacy_token_file):
+            if not os.path.exists(token_file):
+                continue
             try:
-                with open(self.token_file, 'r') as f:
+                with open(token_file, 'r') as f:
                     token = f.read().strip()
                     if token:
                         self.token_var.set(token)
                         self.authenticate()
+                        return
             except Exception as e:
                 print(f"Error loading token: {e}")
     
@@ -2660,7 +2665,7 @@ To generate a new token:
     def _open_repo_in_browser(self):
         """Open current repository in browser"""
         if self.current_repo:
-            from auger.tools.host_cmd import open_url as _open_url; _open_url(self.current_repo.html_url)
+            from platformgen.tools.host_cmd import open_url as _open_url; _open_url(self.current_repo.html_url)
     
     def _on_issue_double_click(self, event):
         """Open issue in browser"""
@@ -2671,7 +2676,7 @@ To generate a new token:
         values = self.issues_tree.item(selection[0])['values']
         issue_number = int(values[0].replace('#', ''))
         issue = self.current_repo.get_issue(issue_number)
-        from auger.tools.host_cmd import open_url as _open_url; _open_url(issue.html_url)
+        from platformgen.tools.host_cmd import open_url as _open_url; _open_url(issue.html_url)
     
     def _on_pr_double_click(self, event):
         """Open PR in browser"""
@@ -2682,7 +2687,7 @@ To generate a new token:
         values = self.prs_tree.item(selection[0])['values']
         pr_number = int(values[0].replace('#', ''))
         pr = self.current_repo.get_pull(pr_number)
-        from auger.tools.host_cmd import open_url as _open_url; _open_url(pr.html_url)
+        from platformgen.tools.host_cmd import open_url as _open_url; _open_url(pr.html_url)
     
     def _on_commit_double_click(self, event):
         """Open commit in browser"""
@@ -2693,7 +2698,7 @@ To generate a new token:
         values = self.commits_tree.item(selection[0])['values']
         sha = values[0]
         commit = self.current_repo.get_commit(sha)
-        from auger.tools.host_cmd import open_url as _open_url; _open_url(commit.html_url)
+        from platformgen.tools.host_cmd import open_url as _open_url; _open_url(commit.html_url)
     
     def _on_action_double_click(self, event):
         """Open workflow run in browser"""
@@ -2704,7 +2709,7 @@ To generate a new token:
         values = self.actions_tree.item(selection[0])['values']
         run_id = int(values[0])
         run = self.current_repo.get_workflow_run(run_id)
-        from auger.tools.host_cmd import open_url as _open_url; _open_url(run.html_url)
+        from platformgen.tools.host_cmd import open_url as _open_url; _open_url(run.html_url)
     
     def _create_issue(self):
         """Create a new issue"""
@@ -2727,7 +2732,7 @@ To generate a new token:
             messagebox.showerror("Error", f"Failed to create issue: {e}")
     
     def build_context(self):
-        """Build context for Ask Auger panel"""
+        """Build context for the Ask Genny panel"""
         context = "GITHUB WIDGET CONTEXT\n\n"
         
         if self.current_user:
@@ -2753,4 +2758,3 @@ To generate a new token:
 def create_widget(parent, context_builder_callback=None):
     """Factory function for widget creation"""
     return GitHubWidget(parent, context_builder_callback)
-

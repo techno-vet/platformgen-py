@@ -1,7 +1,7 @@
 """
 Artifactory Widget — Browse, pull, push, and run images from JFrog Artifactory.
 
-Credentials are read from ~/.auger/.env:
+Credentials are read from the runtime .env:
     ARTIFACTORY_URL             https://artifactory.helix.gsa.gov
     ARTIFACTORY_USERNAME        your username
     ARTIFACTORY_IDENTITY_TOKEN  (preferred) identity token
@@ -20,8 +20,9 @@ import urllib.parse
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.runtime import state_dir
 
 BG    = '#1e1e1e'
 BG2   = '#252526'
@@ -39,7 +40,7 @@ PACKAGE_ICONS = {'Docker': 'Docker', 'Maven': 'Maven', 'Npm': 'NPM',
 
 
 def _load_env() -> dict:
-    env_file = _auger_home() / '.auger' / '.env'
+    env_file = state_dir() / '.env'
     load_dotenv(env_file, override=True)
     return {
         'url':      os.getenv('ARTIFACTORY_URL', '').rstrip('/'),
@@ -509,7 +510,7 @@ class ArtifactoryWidget(tk.Frame):
         except Exception as e:
             self.after(0, lambda: self._status_var.set(f"Error: {e}"))
             self.after(0, lambda: messagebox.showerror(
-                "Artifactory", f"Cannot connect:\n{e}\n\nCheck ARTIFACTORY_* in ~/.auger/.env"))
+                "Artifactory", f"Cannot connect:\n{e}\n\nCheck ARTIFACTORY_* in {state_dir() / '.env'}"))
 
     def _load_docker_images(self):
         repo = self._docker_repo_var.get()
@@ -588,9 +589,9 @@ class ArtifactoryWidget(tk.Frame):
     # ── Actions ────────────────────────────────────────────────────────────────
 
     def _docker_env(self):
-        """Return env dict with DOCKER_CONFIG pointing to writable ~/.auger/.docker."""
+        """Return env dict with DOCKER_CONFIG pointing to writable runtime state."""
         env = os.environ.copy()
-        env['DOCKER_CONFIG'] = str(_auger_home() / '.auger' / '.docker')
+        env['DOCKER_CONFIG'] = str(state_dir() / '.docker')
         return env
 
     def _docker_login(self):
@@ -598,7 +599,7 @@ class ArtifactoryWidget(tk.Frame):
         cfg = _load_env()
         registry = cfg['url'].replace('https://', '').replace('http://', '').rstrip('/')
         if not registry or not cfg['username'] or not cfg['password']:
-            return False, 'Missing ARTIFACTORY credentials in ~/.auger/.env'
+            return False, f"Missing ARTIFACTORY credentials in {state_dir() / '.env'}"
         r = subprocess.run(
             ['docker', 'login', registry, '-u', cfg['username'], '--password-stdin'],
             input=cfg['password'].encode(), capture_output=True,

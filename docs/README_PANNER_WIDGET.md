@@ -192,7 +192,7 @@ To add more options, edit these files (one option per line).
 ### "Missing Credentials" error
 - Ensure DATADOG_API_KEY and DATADOG_APP_KEY are set in API Config
 - Click "Save to .env" after entering credentials
-- Restart Auger if needed
+- Restart PlatformGen if needed
 
 ### "Node.js not found" error
 ```bash
@@ -256,7 +256,7 @@ brew install node
 - **Service Parameter**: Uses `service` for logs, `kube_service` for pods
 
 ### Architecture
-- **Frontend**: Tkinter widget with Auger dark theme
+- **Frontend**: Tkinter widget with PlatformGen dark theme
 - **Backend**: Node.js script (index.mjs) calls DataDog API
 - **Data Flow**: 
   1. Widget builds command with parameters
@@ -283,9 +283,9 @@ brew install node
 - Rate limits apply (varies by plan)
 - Supports pagination with cursors
 
-## Integration with Ask Auger
+## Integration with Ask Genny
 
-The widget provides context to Ask Auger:
+The widget provides context to Ask Genny:
 - Current query
 - Number of logs loaded
 - Sample of recent log messages

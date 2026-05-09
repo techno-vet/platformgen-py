@@ -72,7 +72,7 @@ For Jira API loading, the widget reuses the existing **Jira MFA session** from t
 The local history DB lives at:
 
 ```text
-~/.auger/logs/prisma_cloud.db
+~/.platformgen/logs/prisma_cloud.db
 ```
 
 ## Notes

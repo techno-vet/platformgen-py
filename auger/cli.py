@@ -17,7 +17,7 @@ from auger.ai.provider_sessions import (
     read_copilot_pinned_session_id,
     write_copilot_pinned_session_id,
 )
-from auger.runtime import app_name, assistant_name, cli_name, product_name, state_dir
+from platformgen.runtime import app_name, assistant_name, cli_name, product_name, repo_dir, state_dir
 
 
 # ── Session Snapshot (Layer 1 + 2) ────────────────────────────────────────────
@@ -33,11 +33,11 @@ def _write_session_snapshot(user_prompt: str, response_lines: list) -> None:
 
     # Git state
     try:
-        for candidate in [
-            Path('/home/auger/repos/auger-ai-sre-platform'),
-            Path.home() / 'repos' / 'auger-ai-sre-platform',
-        ]:
-            if candidate.exists():
+        for candidate in [repo_dir(), Path.cwd()]:
+            if not candidate:
+                continue
+            candidate = Path(candidate)
+            if (candidate / '.git').exists():
                 branch = subprocess.check_output(
                     ['git', '-C', str(candidate), 'branch', '--show-current'],
                     stderr=subprocess.DEVNULL, text=True).strip()
@@ -109,9 +109,13 @@ def _load_behavior_doc() -> str:
     """
     candidates = [
         Path(__file__).parent / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
-        Path('/home/auger/repos/auger-ai-sre-platform/auger/data/origin/AUGER_BEHAVIOR.md'),
-        Path.home() / 'repos' / 'auger-ai-sre-platform' / 'auger' / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
     ]
+    repo = repo_dir()
+    if repo:
+        candidates.extend([
+            repo / 'auger' / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
+            repo / 'platformgen' / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
+        ])
     for p in candidates:
         if p.exists():
             try:
@@ -846,7 +850,7 @@ def test(integration, config_dir):
                 from auger.integrations.datadog_integration import test_datadog
                 result = test_datadog(config)
             elif integ == 'servicenow':
-                from auger.tools.servicenow_session import ServiceNowSession
+                from platformgen.tools.servicenow_session import ServiceNowSession
                 sn = ServiceNowSession()
                 result = len(sn.scrape_incidents(limit=1)) > 0
             

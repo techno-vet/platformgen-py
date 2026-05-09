@@ -1,6 +1,6 @@
 """
 Host Tools Widget - Manage and launch tools on the host machine from within the container.
-Tools are registered in ~/.auger/host_tools.json and launched via the Host Tools Daemon.
+Tools are registered in the runtime host_tools.json and launched via the Host Tools Daemon.
 """
 
 import tkinter as tk
@@ -8,8 +8,9 @@ from tkinter import ttk, messagebox, simpledialog
 import threading
 import json
 from pathlib import Path
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.runtime import state_dir
 
 BG = '#1e1e1e'
 BG2 = '#252526'
@@ -156,7 +157,7 @@ class HostToolsWidget(tk.Frame):
 
     def _refresh_thread(self, auto_detect_if_empty=False):
         try:
-            from auger.tools.host_cmd import list_tools, auto_detect_tools
+            from platformgen.tools.host_cmd import list_tools, auto_detect_tools
             tools = list_tools()
             if not tools and auto_detect_if_empty:
                 self.after(0, lambda: self.status_var.set("Auto-detecting tools..."))
@@ -307,7 +308,7 @@ class HostToolsWidget(tk.Frame):
     def _load_host_icon(self, key: str, icon_name: str, label: tk.Label):
         """Background thread: fetch real icon from host, update label if found."""
         try:
-            from auger.tools.host_cmd import get_tool_icon
+            from platformgen.tools.host_cmd import get_tool_icon
             from PIL import Image, ImageTk
             import io
             raw = get_tool_icon(key, icon_name)
@@ -337,7 +338,7 @@ class HostToolsWidget(tk.Frame):
         self.status_var.set(f"Launching {key}...")
         def _thread():
             try:
-                from auger.tools.host_cmd import launch_tool
+                from platformgen.tools.host_cmd import launch_tool
                 result = launch_tool(key)
                 if result.get('status') == 'ok':
                     self.after(0, lambda: self.status_var.set(f"✅ Launched {key}"))
@@ -354,7 +355,7 @@ class HostToolsWidget(tk.Frame):
         self.status_var.set("Auto-detecting tools...")
         def _thread():
             try:
-                from auger.tools.host_cmd import auto_detect_tools
+                from platformgen.tools.host_cmd import auto_detect_tools
                 tools = auto_detect_tools()
                 self.after(0, lambda: self._render_tools(tools))
                 self.after(0, lambda: self.status_var.set(f"Found {len(tools)} tool(s)"))
@@ -367,7 +368,7 @@ class HostToolsWidget(tk.Frame):
         self.status_var.set("Loading launcher apps from host...")
         def _thread():
             try:
-                from auger.tools.host_cmd import list_desktop_apps
+                from platformgen.tools.host_cmd import list_desktop_apps
                 apps = list_desktop_apps()
                 if not apps:
                     self.after(0, lambda: messagebox.showinfo(
@@ -462,7 +463,7 @@ class HostToolsWidget(tk.Frame):
             if not indices:
                 messagebox.showwarning("No Selection", "Select at least one app.", parent=dialog)
                 return
-            from auger.tools.host_cmd import register_tool
+            from platformgen.tools.host_cmd import register_tool
             added = []
             for i in indices:
                 app = filtered_apps[i]
@@ -500,7 +501,7 @@ class HostToolsWidget(tk.Frame):
         """Remove a tool from the registry."""
         if not messagebox.askyesno("Remove Tool", f"Remove '{key}' from host tools?"):
             return
-        tools_file = _auger_home() / '.auger' / 'host_tools.json'
+        tools_file = state_dir() / 'host_tools.json'
         try:
             data = json.loads(tools_file.read_text())
             data['tools'] = [t for t in data.get('tools', []) if t.get('key') != key]
@@ -577,7 +578,7 @@ class HostToolsWidget(tk.Frame):
             self.status_var.set(f"Searching for {name}...")
             def _thread():
                 try:
-                    from auger.tools.host_cmd import find_tool
+                    from platformgen.tools.host_cmd import find_tool
                     path = find_tool(name.lower().replace(' ', ''))
                     if path:
                         self.after(0, lambda: bin_var.set(path))
@@ -607,7 +608,7 @@ class HostToolsWidget(tk.Frame):
                 TOOL_ICONS[key] = ico
 
             try:
-                from auger.tools.host_cmd import register_tool
+                from platformgen.tools.host_cmd import register_tool
                 result = register_tool(key, name, binary)
                 if result.get('status') == 'ok':
                     dialog.destroy()
@@ -632,7 +633,7 @@ class HostToolsWidget(tk.Frame):
         self.status_var.set(f"Looking for {known_tool['name']} on host...")
         def _thread():
             try:
-                from auger.tools.host_cmd import find_tool, register_tool
+                from platformgen.tools.host_cmd import find_tool, register_tool
                 binary = ''
                 for b in known_tool['binaries']:
                     found = find_tool(b)

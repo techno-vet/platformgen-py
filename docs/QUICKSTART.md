@@ -1,4 +1,4 @@
-# Auger SRE Platform — Quick Start (Alpha)
+# PlatformGen — Quick Start
 
 **Time to first launch: ~5 minutes** (mostly Docker pull on first run)
 
@@ -13,20 +13,20 @@
 ## Step 1 — Clone the repo
 
 ```bash
-mkdir -p ~/repos && cd ~/repos
-# SSH, HTTPS, or VS Code source control are all fine — just land here:
-git clone https://github.helix.gsa.gov/assist/auger-ai-sre-platform.git
-cd auger-ai-sre-platform
+mkdir -p ~/projects && cd ~/projects
+# Use your current PlatformGen checkout URL if cloning fresh:
+git clone <platformgen-repo-url> platformgen-py
+cd platformgen-py
 ```
 
 ---
 
-## Optional Step 1a — Pre-fill `~/.auger/.env`
+## Optional Step 1a — Pre-fill `~/.platformgen/.env`
 
 ```bash
-mkdir -p ~/.auger
-cp .env.example ~/.auger/.env
-chmod 600 ~/.auger/.env
+mkdir -p ~/.platformgen
+cp .env.example ~/.platformgen/.env
+chmod 600 ~/.platformgen/.env
 ```
 
 You can leave values blank and only fill in the keys you already have before onboarding.
@@ -44,7 +44,7 @@ The wizard will:
 2. **Capture missing GitHub tokens early** — both `GH_TOKEN` (github.com) and `GHE_TOKEN` (github.helix.gsa.gov)
 3. **Validate** each credential live before saving (GitHub, Enterprise GitHub, Artifactory image access)
 4. **Pull the image** from Artifactory (~500 MB, once only)
-5. **Launch Auger** — the platform window opens on your desktop
+5. **Launch PlatformGen** — the platform window opens on your desktop
 
 > **AU Gold users**: the wizard detects `astutl_secure_config.env` automatically and imports Artifactory, GitHub, DataDog, Rancher, Jenkins, Jira, and Cryptkeeper keys silently — you likely won't be prompted for anything.
 
@@ -52,23 +52,23 @@ The wizard will:
 
 ---
 
-## Step 3 — Ask Auger anything
+## Step 3 — Ask Genny anything
 
-Once the window opens, click the **Ask Auger** tab and type:
+Once the window opens, click the **Ask Genny** panel and type:
 
 ```
 what can you do?
 ```
 
-Auger will walk you through the available widgets and next steps.
+Genny will walk you through the available widgets and next steps.
 
 ---
 
 ## Credentials reference
 
-| Widget | Key in `~/.auger/.env` | Where to get it |
+| Widget | Key in `~/.platformgen/.env` | Where to get it |
 |--------|----------------------|----------------|
-| Ask Auger | `GH_TOKEN` | github.com → Fine-grained personal access tokens → create one with `Copilot requests` permission |
+| Ask Genny | `GH_TOKEN` | github.com → Fine-grained personal access tokens → create one with `Copilot requests` permission |
 | GitHub widget | `GHE_TOKEN` (`GHE_URL` defaults to `https://github.helix.gsa.gov`) | github.helix.gsa.gov → Settings → Tokens |
 | Artifactory | `ARTIFACTORY_IDENTITY_TOKEN` (preferred) or legacy `ARTIFACTORY_API_KEY` | Artifactory → Profile / Authentication Settings |
 | Rancher/Pods | `RANCHER_BEARER_TOKEN` | Rancher → API Keys |
@@ -76,17 +76,17 @@ Auger will walk you through the available widgets and next steps.
 | Jira | `JIRA_API_TOKEN` | gsa-standard.atlassian-us-gov-mod.net → Profile |
 | Jenkins | `JENKINS_API_TOKEN` | jenkins-mcaas.helix.gsa.gov → Configure |
 
-Open the **API Keys+** tab (🔑) inside Auger to add or update any credential.
+Open the **API Keys+** tab (🔑) inside PlatformGen to add or update any credential.
 
 ---
 
-## Updating Auger
+## Updating PlatformGen
 
 ```bash
-cd ~/repos/auger-ai-sre-platform
+cd ~/projects/platformgen-py
 git pull
-docker rm -f auger-platform
-./scripts/auger-launch.sh
+docker rm -f platformgen-platform
+bash scripts/platformgen-launch.sh
 ```
 
 ---
@@ -97,8 +97,8 @@ docker rm -f auger-platform
 |---------|-----|
 | Window doesn't appear | `xhost +local:docker` then re-run |
 | `couldn't connect to display` | `export DISPLAY=:0` then re-run |
-| Container exits immediately | `docker logs auger-platform` |
-| Ask Auger not responding | Check `GH_TOKEN` in API Keys+ — must be github.com token |
+| Container exits immediately | `docker logs platformgen-platform` |
+| Ask Genny not responding | Check `GH_TOKEN` in API Keys+ — must be github.com token |
 | Artifactory login failed | Use Identity Token (not password); API key is legacy only |
 
 Full install guide: `INSTALLATION_GUIDE.md`  

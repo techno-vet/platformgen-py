@@ -1,6 +1,6 @@
 """
 Prospector Widget - CVE Analysis Tool
-Integrated version of Au Prospector for the Auger SRE Platform
+Integrated CVE analysis workflow for PlatformGen
 """
 
 import tkinter as tk
@@ -14,8 +14,9 @@ from datetime import datetime
 import threading
 from pathlib import Path
 import sys
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.runtime import state_dir
 
 from auger.tools.jenkins import (
     JenkinsAuthError,
@@ -27,7 +28,7 @@ from auger.tools.jenkins import (
     parse_prisma_compliance,
 )
 from dotenv import load_dotenv
-load_dotenv(Path.home() / '.auger' / '.env')
+load_dotenv(state_dir() / '.env')
 
 # Auger Platform Colors
 BG = '#1e1e1e'
@@ -950,10 +951,10 @@ class ProspectorWidget(tk.Frame):
         thread.start()
 
     def _ensure_writable_prisma_repos_dir(self):
-        """Return a writable ~/.auger/prisma-repos directory, migrating stale copies if needed."""
-        auger_dir = Path.home() / '.auger'
-        auger_dir.mkdir(parents=True, exist_ok=True)
-        repos_dir = auger_dir / 'prisma-repos'
+        """Return a writable runtime prisma-repos directory, migrating stale copies if needed."""
+        runtime_dir = state_dir()
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        repos_dir = runtime_dir / 'prisma-repos'
 
         if not repos_dir.exists():
             repos_dir.mkdir(parents=True, exist_ok=True)
@@ -962,7 +963,7 @@ class ProspectorWidget(tk.Frame):
         if repos_dir.is_dir() and os.access(repos_dir, os.W_OK | os.X_OK):
             return repos_dir
 
-        backup_dir = auger_dir / f"prisma-repos-legacy-{datetime.now():%Y%m%d-%H%M%S}"
+        backup_dir = runtime_dir / f"prisma-repos-legacy-{datetime.now():%Y%m%d-%H%M%S}"
         try:
             repos_dir.rename(backup_dir)
             repos_dir.mkdir(parents=True, exist_ok=True)
@@ -1158,8 +1159,8 @@ class ProspectorWidget(tk.Frame):
         if not username or not password:
             return False, "Artifactory credentials not set in API Keys+ widget"
         try:
-            # Use ~/.auger/.docker as DOCKER_CONFIG - always writable in container
-            docker_cfg = Path.home() / '.auger' / '.docker'
+            # Use runtime .docker as DOCKER_CONFIG - always writable in container
+            docker_cfg = state_dir() / '.docker'
             docker_cfg.mkdir(parents=True, exist_ok=True)
             env = os.environ.copy()
             env['DOCKER_CONFIG'] = str(docker_cfg)
@@ -1220,7 +1221,7 @@ class ProspectorWidget(tk.Frame):
             # Execute docker command with unbuffered output
             env = os.environ.copy()
             env['DOCKER_BUILDKIT'] = '0'  # Disable BuildKit fancy output
-            env['DOCKER_CONFIG'] = str(Path.home() / '.auger' / '.docker')
+            env['DOCKER_CONFIG'] = str(state_dir() / '.docker')
             
             result = subprocess.Popen(
                 cmd,
@@ -1897,7 +1898,7 @@ class ProspectorWidget(tk.Frame):
         self.status_var.set(f"✓ CVE diff complete: {len(fixed_cves)} fixed, {len(new_cves)} new")
     
     def get_context_for_auger(self):
-        """Build context string for Ask Auger panel"""
+        """Build context string for the Ask Genny panel"""
         context_parts = []
         
         # Repository info

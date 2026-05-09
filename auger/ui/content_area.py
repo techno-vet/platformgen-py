@@ -5,7 +5,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import re
 from pathlib import Path
-from auger.ui import icons as _icons
+from platformgen.ui import icons as _icons
+from platformgen.runtime import app_name, assistant_name, daemon_port, state_dir
 
 BG     = "#1e1e1e"
 BG2    = "#252526"
@@ -16,7 +17,7 @@ FG2    = "#858585"
 GREEN  = "#4ec9b0"
 RED    = "#f44747"
 
-_STATE_FILE = Path.home() / '.auger' / 'tab_state.json'
+_STATE_FILE = state_dir() / 'tab_state.json'
 
 def _tab_icon_for_class(widget_class, size=18):
     """Return a PhotoImage for the tab, preferring WIDGET_ICON_FUNC over WIDGET_ICON_NAME.
@@ -400,7 +401,7 @@ class ContentArea(tk.Frame):
     # ── Tab state persistence ─────────────────────────────────────────────────
 
     def _save_tab_state(self):
-        """Write open tab keys + active tab to ~/.auger/tab_state.json."""
+        """Write open tab keys + active tab to the runtime tab_state.json."""
         try:
             active_key = None
             if self._current_frame:
@@ -475,10 +476,10 @@ class ContentArea(tk.Frame):
         home_frame = tk.Frame(self._stack, bg='#1e1e1e')
         content = tk.Frame(home_frame, bg='#1e1e1e')
         content.place(relx=0.5, rely=0.4, anchor=tk.CENTER)
-        tk.Label(content, text="[*] Auger SRE Platform",
+        tk.Label(content, text=f"[*] {app_name()}",
                  font=('Segoe UI', 32, 'bold'), fg='#4ec9b0', bg='#1e1e1e'
                  ).pack(pady=(0, 10))
-        tk.Label(content, text="Ask Auger below to build your platform",
+        tk.Label(content, text=f"Ask {assistant_name()} below to build your platform",
                  font=('Segoe UI', 14), fg='#e0e0e0', bg='#1e1e1e'
                  ).pack(pady=(0, 20))
         tk.Label(content, text='Try: "create a service health monitor widget"',
@@ -557,7 +558,7 @@ class ContentArea(tk.Frame):
             print(f"❌ Error loading widget {name}: {e}")
 
     def _build_crash_overlay(self, frame, widget_name, widget_class, error_msg, tb_str):
-        """Replace widget content with a crash banner + 'Ask Auger to fix' button."""
+        """Replace widget content with a crash banner + assistant-fix button."""
         import inspect as _inspect
 
         # Resolve source file path for this widget class
@@ -627,7 +628,7 @@ class ContentArea(tk.Frame):
                 self._build_crash_overlay(frame, widget_name, widget_class,
                                           str(retry_exc), _tb2.format_exc())
 
-        tk.Button(btn_row, text='🤖  Ask Auger to Fix',
+        tk.Button(btn_row, text=f'Ask {assistant_name()} to Fix',
                   font=('Segoe UI', 10, 'bold'), fg='#ffffff', bg='#0e639c',
                   activebackground='#1177bb', relief=tk.FLAT, padx=12, pady=6,
                   cursor='hand2',
@@ -646,7 +647,7 @@ class ContentArea(tk.Frame):
             try:
                 subprocess.Popen(
                     ['curl', '-sf', '--noproxy', 'localhost',
-                     '-X', 'POST', 'http://localhost:7437/schedule_restart',
+                     '-X', 'POST', f'http://localhost:{daemon_port()}/schedule_restart',
                      '-H', 'Content-Type: application/json',
                      '-d', '{"delay": 3, "message": "Restarting platform..."}'],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL

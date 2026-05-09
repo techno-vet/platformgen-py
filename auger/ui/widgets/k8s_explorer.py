@@ -16,7 +16,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
-from auger.ui.utils import make_text_copyable
+from platformgen.ui.utils import make_text_copyable
 
 
 BG = "#1e1e1e"

@@ -2,7 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkterm import Terminal, TkTermConfig
-from auger.ui import icons as _icons
+from platformgen.ui import icons as _icons
 
 
 

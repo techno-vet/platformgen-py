@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-STATE_DIR="${AUGER_HOME:-$HOME/.platformgen}"
-SOURCE_DIR="${AUGER_MIGRATION_SOURCE:-$HOME/.auger}"
+STATE_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
+SOURCE_DIR="${PLATFORMGEN_MIGRATION_SOURCE:-${AUGER_MIGRATION_SOURCE:-$HOME/.auger}}"
 
 mkdir -p "$STATE_DIR"
 

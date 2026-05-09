@@ -1,7 +1,7 @@
 # GitHub Widget - User Guide
 
 ## Overview
-The GitHub Widget provides a comprehensive interface for browsing and managing GitHub repositories directly within the Auger SRE Platform.
+The GitHub Widget provides a comprehensive interface for browsing and managing GitHub repositories directly within PlatformGen.
 
 ## Features
 
@@ -74,7 +74,7 @@ If you don't have a token yet:
 
 1. Go to: https://github.helix.gsa.gov/settings/tokens
 2. Click **"Generate new token (classic)"**
-3. Give it a name (e.g., "Auger SRE Platform")
+3. Give it a name (e.g., "PlatformGen")
 4. Select required scopes:
    - ✅ `repo` - Full control of private repositories
    - ✅ `read:org` - Read org and team membership
@@ -119,9 +119,9 @@ If you don't have a token yet:
 3. View workflow run statuses
 4. **Double-click** to open run details in browser
 
-## Integration with Ask Auger
+## Integration with Ask Genny
 
-The widget provides rich context to the Ask Auger panel:
+The widget provides rich context to the Ask Genny panel:
 
 - Current authentication status
 - Selected repository details
@@ -189,7 +189,7 @@ pip install PyGithub requests
 - Supports both GitHub.com and GitHub Enterprise
 
 ### Data Storage
-- Token saved to: `~/.auger_github_token`
+- Token saved to: `~/.platformgen/.github_token` (a legacy home-directory token cache is still read for compatibility)
 - Configuration read from: `.env` file
 - File permissions: 600 (user read/write only)
 
@@ -242,4 +242,4 @@ For issues or questions:
 
 **Version**: 1.0  
 **Last Updated**: 2026-02-27  
-**Author**: Auger Team
+**Author**: PlatformGen Team

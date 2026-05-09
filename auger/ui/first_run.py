@@ -13,8 +13,8 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 
-from auger.ui import icons as _icons
-from auger.runtime import app_name, assistant_name, cli_name, product_name, state_dir
+from platformgen.ui import icons as _icons
+from platformgen.runtime import app_name, assistant_name, cli_name, product_name, state_dir
 
 ENV_FILE = state_dir() / ".env"
 
@@ -84,7 +84,7 @@ def _validate_token(token: str) -> tuple[bool, str]:
         req = urllib.request.Request(api_url, headers={
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "auger-platform/1.0",
+            "User-Agent": "platformgen-platform/1.0",
         })
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = _json.loads(resp.read())
@@ -126,7 +126,7 @@ def _test_copilot(token: str) -> tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, "Copilot test timed out (>20s)"
     except Exception as e:
-        return False, f"Error running auger: {e}"
+        return False, f"Error running {cli_name()}: {e}"
 
 
 def _find_auger() -> str | None:
@@ -251,13 +251,13 @@ class FirstRunWizard(tk.Toplevel):
         if self._ico_home:
             tk.Label(self._body, image=self._ico_home, bg=BG).pack(pady=(10, 0))
 
-        tk.Label(self._body, text="Welcome to Auger SRE Platform",
+        tk.Label(self._body, text=f"Welcome to {product_name()}",
                  font=("Segoe UI", 16, "bold"), fg=GREEN, bg=BG).pack(pady=(8, 4))
 
         tk.Label(self._body,
-                 text="Auger uses GitHub Copilot as its AI backbone.\n"
+                 text=f"{product_name()} uses GitHub Copilot as its AI backbone.\n"
                       "This wizard will configure your GitHub token so\n"
-                      "Ask Auger can help you set up everything else.",
+                      f"Ask {assistant_name()} can help you set up everything else.",
                  font=("Segoe UI", 11), fg=FG, bg=BG, justify=tk.CENTER
                  ).pack(pady=(0, 16))
 

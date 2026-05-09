@@ -1,7 +1,7 @@
 """
 Flux Config Widget - Browse, view, and update image tags in Flux HelmRelease config repos.
 
-Reads two flux repos (configurable via ~/.auger/.env):
+Reads two flux repos (configurable via the runtime .env):
     FLUX_REPO_DEV   path to assist-flux-config        (default: ~/repos/assist-flux-config)
     FLUX_REPO_PROD  path to assist-prod-flux-config   (default: ~/repos/assist-prod-flux-config)
 
@@ -30,8 +30,9 @@ from tkinter import messagebox, scrolledtext, simpledialog, ttk
 import yaml
 from dotenv import load_dotenv
 
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.runtime import state_dir
 
 # ── Colour palette (matches platform dark theme) ──────────────────────────────
 BG      = '#1e1e1e'
@@ -50,7 +51,7 @@ IGNORE_CLR = '#888888'
 # ── Repo defaults ─────────────────────────────────────────────────────────────
 
 def _load_repo_paths() -> dict:
-    load_dotenv(_auger_home() / '.auger' / '.env', override=True)
+    load_dotenv(state_dir() / '.env', override=True)
     return {
         'dev':  Path(os.getenv('FLUX_REPO_DEV',  str(_auger_home() / 'repos' / 'assist-flux-config'))),
         'prod': Path(os.getenv('FLUX_REPO_PROD', str(_auger_home() / 'repos' / 'assist-prod-flux-config'))),

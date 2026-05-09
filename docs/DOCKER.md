@@ -1,6 +1,6 @@
-# Auger Platform - Docker Guide
+# PlatformGen - Docker Guide
 
-Run Auger Platform in Docker for testing, development, or isolated environments.
+Run PlatformGen in Docker for testing, development, or isolated environments.
 
 ## Quick Start
 
@@ -12,7 +12,7 @@ make setup
 # 2. Run automated test
 make test
 
-# 3. Run Auger Platform
+# 3. Run PlatformGen
 make run
 make shell
 ```
@@ -21,7 +21,7 @@ make shell
 
 ### Production Mode (`docker-compose.yml`)
 - Uses your actual configurations
-- Mounts `~/.auger`, `~/.kube`, `~/.ssh`
+- Mounts `~/.platformgen`, `~/.kube`, `~/.ssh`
 - Full access to host resources
 - Persistent data
 
@@ -79,7 +79,7 @@ export DISPLAY=:0
 Required in `.env` file:
 
 ```bash
-# Required for Ask Auger
+# Required for Ask Genny
 GH_TOKEN=<fine-grained github.com token with Copilot requests permission>
 
 # Optional Helix GitHub access (separate token)
@@ -97,7 +97,7 @@ SERVICENOW_INSTANCE=https://your-instance.service-now.com
 - `make build` - Build production image
 
 ### Development
-- `make run` - Start Auger container with your configs
+- `make run` - Start the PlatformGen container with your configs
 - `make shell` - Open bash in running container
 - `make logs` - View container logs
 - `make stop` - Stop containers
@@ -136,7 +136,7 @@ docker-compose -f docker-compose.test.yml up --build
 docker-compose -f docker-compose.test.yml run --rm auger-test bash
 
 # Inside test container
-cd /home/testuser/auger-platform
+cd /home/testuser/platformgen-platform
 ./install.sh
 source ~/.bashrc
 auger init --token $GITHUB_COPILOT_TOKEN
@@ -161,7 +161,7 @@ The Docker image includes:
   - Install with: `curl -fsSL https://gh.io/copilot-install | bash`
   - Or: `brew install copilot-cli`
 
-**Auger Platform:**
+**PlatformGen runtime:**
 - Installed in development mode
 - All Python dependencies
 - CLI commands available
@@ -171,7 +171,7 @@ The Docker image includes:
 ### Production Mode
 ```
 ./                          → /home/auger/auger-platform  (code)
-~/.auger                    → /home/auger/.auger         (config)
+~/.platformgen              → /home/auger/.auger         (runtime state, legacy in-container path)
 ~/.kube                     → /home/auger/.kube          (kubectl)
 ~/.ssh                      → /home/auger/.ssh           (git keys)
 ~/.gitconfig                → /home/auger/.gitconfig     (git config)
@@ -181,7 +181,7 @@ The Docker image includes:
 
 ### Test Mode
 ```
-./                          → /home/testuser/auger-platform  (code only)
+./                          → /home/testuser/platformgen-platform  (code only)
 /tmp/.X11-unix              → /tmp/.X11-unix                 (display)
 /var/run/docker.sock        → /var/run/docker.sock           (docker)
 ```
@@ -207,7 +207,7 @@ sudo usermod -aG docker $USER
 # Log out and back in
 ```
 
-### Auger Command Not Found
+### PlatformGen CLI Not Found
 ```bash
 # Inside container
 echo $PATH  # Should include /home/auger/.local/bin
@@ -247,7 +247,7 @@ Use test mode for CI pipelines:
 
 ```yaml
 # GitHub Actions example
-- name: Test Auger Installation
+- name: Test PlatformGen Installation
   run: |
     make setup
     echo "GITHUB_COPILOT_TOKEN=${{ secrets.COPILOT_TOKEN }}" >> .env

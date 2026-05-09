@@ -1,17 +1,17 @@
-# Auger Ask - Quick Copilot Access
+# Ask Genny - Quick Copilot Access
 
-Quick reference for asking GitHub Copilot questions from Auger.
+Quick reference for asking GitHub Copilot questions from PlatformGen.
 
 ## Usage (Now Even Simpler!)
 
-### Default Behavior - Just `auger`
+### Default Behavior - Just `genny`
 
 ```bash
 # With prompt (ask mode)
-auger "how do I deploy to kubernetes?"
+genny "how do I deploy to kubernetes?"
 
 # No prompt (GUI mode)
-auger
+genny
 ```
 
 **That's it!** No subcommands needed for quick questions.
@@ -23,8 +23,8 @@ auger
 auger-ask "question"
 auger-ask  # GUI
 
-# From Auger GUI
-# Use the "Ask Auger" panel
+# From PlatformGen GUI
+# Use the "Ask Genny" panel
 ```
 
 ## Usage Examples
@@ -33,16 +33,16 @@ auger-ask  # GUI
 
 ```bash
 # DevOps tasks
-auger "how do I check pod status in kubernetes?"
-auger "create a Dockerfile for Python FastAPI app"
+genny "how do I check pod status in kubernetes?"
+genny "create a Dockerfile for Python FastAPI app"
 
 # Git operations
-auger "how do I revert last commit?"
-auger "squash last 3 commits"
+genny "how do I revert last commit?"
+genny "squash last 3 commits"
 
 # Debugging
-auger "what does this error mean: ModuleNotFoundError"
-auger "how to debug Python memory leak?"
+genny "what does this error mean: ModuleNotFoundError"
+genny "how to debug Python memory leak?"
 ```
 
 ### GUI Mode
@@ -101,37 +101,37 @@ Both commands require:
 
 ❌ Bad:
 ```bash
-auger ask "deploy app"
+genny ask "deploy app"
 ```
 
 ✅ Good:
 ```bash
-auger ask "create kubernetes deployment yaml for nginx with 3 replicas"
+genny ask "create kubernetes deployment yaml for nginx with 3 replicas"
 ```
 
 ### Include Context
 
 ```bash
-auger ask "how to fix 'permission denied' when running docker? I'm on Ubuntu 22.04"
+genny ask "how to fix 'permission denied' when running docker? I'm on Ubuntu 22.04"
 ```
 
 ### Use for Code Review
 
 ```bash
-auger ask "review this Python function: $(cat my_function.py)"
+genny ask "review this Python function: $(cat my_function.py)"
 ```
 
 ### Quick Scripts
 
 ```bash
-auger ask "write bash script to backup PostgreSQL database"
+genny ask "write bash script to backup PostgreSQL database"
 ```
 
 ### Error Help
 
 ```bash
 # Copy error and ask
-auger ask "$(kubectl logs pod-name 2>&1 | tail -20)"
+genny ask "$(kubectl logs pod-name 2>&1 | tail -20)"
 ```
 
 ## Keyboard Shortcuts
@@ -146,7 +146,7 @@ auger ask "$(kubectl logs pod-name 2>&1 | tail -20)"
 
 ## Comparison
 
-| Feature | `auger` | `auger-ask` | GUI Panel |
+| Feature | `genny` | `auger-ask` | GUI Panel |
 |---------|---------|-------------|-----------|
 | Quick ask | ✅ | ✅ | ❌ |
 | CLI commands | ✅ | ❌ | ❌ |
@@ -154,7 +154,7 @@ auger ask "$(kubectl logs pod-name 2>&1 | tail -20)"
 | Standalone | ❌ | ✅ | ❌ |
 | Context aware | ❌ | ❌ | ✅ |
 
-**Recommended**: Use `auger` for everything - it's dual-mode!
+**Recommended**: Use `genny` for quick questions and the Ask Genny panel for rich in-app context.
 
 ## Troubleshooting
 
@@ -191,7 +191,7 @@ echo $DISPLAY
 export DISPLAY=:0
 
 # Try again
-auger ask
+genny ask
 ```
 
 ## Advanced Usage
@@ -204,7 +204,7 @@ auger ask
 
 command_that_might_fail || {
     ERROR_MSG="$?"
-    auger ask "how to fix exit code $ERROR_MSG in bash script?"
+    genny ask "how to fix exit code $ERROR_MSG in bash script?"
 }
 ```
 
@@ -212,9 +212,9 @@ command_that_might_fail || {
 
 Add to `~/.bashrc`:
 ```bash
-# Auger is already short, but you could make aliases:
-alias ask='auger'
-alias a='auger'
+# Genny is already short, but you could make aliases:
+alias ask='genny'
+alias a='genny'
 
 # Then use:
 ask "quick question"
@@ -225,20 +225,20 @@ a "even quicker"
 
 ```bash
 # Ask about git diff
-git diff | auger "review these changes"
+git diff | genny "review these changes"
 
 # Ask about logs
-docker logs container 2>&1 | tail -50 | auger "what's wrong?"
+docker logs container 2>&1 | tail -50 | genny "what's wrong?"
 
 # Ask about system
-df -h | auger "disk usage recommendations"
+df -h | genny "disk usage recommendations"
 ```
 
 ## FAQ
 
 **Q: Can I still use platform commands?**
 
-A: Yes! `auger init`, `auger start`, etc. all work. If first arg is a known command or starts with `--`, it uses CLI mode.
+A: Yes. `platformgen`, `genny`, and the legacy `auger` wrapper all work. If the first arg is a known subcommand or starts with `--`, it uses CLI mode.
 
 **Q: How does it know if I'm asking a question?**
 
@@ -260,5 +260,5 @@ A: Yes, prompts are sent to GitHub Copilot API. Don't include secrets!
 
 **Quick Start:**
 ```bash
-auger ask "how do I get started with Auger?"
+genny ask "how do I get started with PlatformGen?"
 ```

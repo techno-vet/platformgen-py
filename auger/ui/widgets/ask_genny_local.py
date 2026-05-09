@@ -12,7 +12,7 @@ import urllib.error
 from tkinter import ttk
 from dotenv import load_dotenv
 
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 
 BG = "#1e1e1e"
 BG2 = "#252526"
@@ -140,7 +140,7 @@ class AskGennyLocalWidget(tk.Frame):
 
     def _can_use_agent_mode(self) -> bool:
         try:
-            from auger.ui.agents.genny_agent import GennyRunner  # noqa: F401
+            from platformgen.ui.agents.genny_agent import GennyRunner  # noqa: F401
             return True
         except Exception:
             return False
@@ -163,7 +163,7 @@ class AskGennyLocalWidget(tk.Frame):
         self._runner = None
 
     def _get_runner(self):
-        from auger.ui.agents.genny_agent import GennyRunner
+        from platformgen.ui.agents.genny_agent import GennyRunner
 
         if self._runner is None:
             self._runner = GennyRunner(model_name=self._model_var.get())

@@ -1,5 +1,5 @@
 """
-Panner Widget - DataDog Log Downloader (Rover) for Auger
+Panner Widget - DataDog Log Downloader (Rover) for PlatformGen
 Download logs from DataDog with advanced filtering and display
 """
 
@@ -14,8 +14,9 @@ from dotenv import load_dotenv
 import threading
 import datetime
 import urllib.parse
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu, auger_home as _auger_home
+from platformgen.runtime import assistant_name
 import webbrowser
 import platform
 
@@ -35,7 +36,7 @@ def _plog(msg):
     except Exception:
         pass
 
-# Color scheme (matching Auger theme)
+# Color scheme (matching PlatformGen theme)
 BG = '#1e1e1e'
 BG2 = '#252526'
 BG3 = '#2d2d2d'
@@ -186,18 +187,21 @@ class PannerWidget(tk.Frame):
         if (self.widget_dir / "node_modules").exists():
             return self.widget_dir
         # Fallback to known baked location
-        baked = _auger_home() / "auger-platform" / "auger_baked" / "ui" / "widgets"
-        if (baked / "node_modules").exists():
-            return baked
+        for baked in (
+            _auger_home() / "platformgen-platform" / "auger_baked" / "ui" / "widgets",
+            _auger_home() / "auger-platform" / "auger_baked" / "ui" / "widgets",
+        ):
+            if (baked / "node_modules").exists():
+                return baked
         return self.widget_dir  # fallback (will show install warning)
 
     def _show_error(self, title, message):
-        """Show a copyable error dialog with 'Copy to Ask Auger' support."""
+        """Show a copyable error dialog with assistant-copy support."""
         _CopyableErrorDialog(self.winfo_toplevel(), title, message,
                              ask_auger_cb=self._copy_to_ask_auger)
 
     def _copy_to_ask_auger(self, text):
-        """Copy error text to clipboard prefixed for Ask Auger."""
+        """Copy error text to clipboard prefixed for Ask Genny."""
         payload = f"I got this error in the Panner widget — can you help?\n\n{text}"
         try:
             self.clipboard_clear()
@@ -1220,7 +1224,7 @@ class PannerWidget(tk.Frame):
     def _open_url(self, url):
         """Open URL in host browser via Host Tools Daemon."""
         try:
-            from auger.tools.host_cmd import open_url as host_open_url
+            from platformgen.tools.host_cmd import open_url as host_open_url
             result = host_open_url(url)
             if result.get("status") == "ok":
                 return
@@ -2014,7 +2018,7 @@ class PannerWidget(tk.Frame):
                 continue
     
     def build_context(self):
-        """Build context for Ask Auger panel"""
+        """Build context for the Ask Genny panel"""
         context = "PANNER WIDGET CONTEXT (DataDog Log Downloader)\n\n"
         
         query = self.query_var.get()
@@ -2036,7 +2040,7 @@ class PannerWidget(tk.Frame):
 
 class _CopyableErrorDialog(tk.Toplevel):
     """A dialog that shows error text in a selectable/copyable text box,
-    with a standard Copy button and a 'Copy to Ask Auger' button."""
+    with a standard Copy button and a 'Copy to Ask Genny' button."""
 
     def __init__(self, parent, title, message, ask_auger_cb=None):
         super().__init__(parent)
@@ -2076,10 +2080,10 @@ class _CopyableErrorDialog(tk.Toplevel):
         if ask_auger_cb:
             def _copy_ask():
                 ask_auger_cb(message)
-                _ask_btn.config(text="✓ Copied for Ask Auger!")
-                self.after(1800, lambda: _ask_btn.config(text="Copy to Ask Auger"))
+                _ask_btn.config(text=f"✓ Copied for Ask {assistant_name()}!")
+                self.after(1800, lambda: _ask_btn.config(text=f"Copy to Ask {assistant_name()}"))
 
-            _ask_btn = tk.Button(btn_frame, text="Copy to Ask Auger",
+            _ask_btn = tk.Button(btn_frame, text=f"Copy to Ask {assistant_name()}",
                                  bg=ACCENT, fg='white', font=('Segoe UI', 9, 'bold'),
                                  relief=tk.FLAT, padx=12, pady=5, command=_copy_ask)
             _ask_btn.pack(side=tk.LEFT, padx=(0, 6))

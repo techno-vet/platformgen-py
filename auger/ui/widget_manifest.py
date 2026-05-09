@@ -1,12 +1,12 @@
 """
-widget_manifest.py — Auger Widget AI Manifest Loader
+widget_manifest.py — PlatformGen Widget AI Manifest Loader
 
 Two-tier knowledge architecture:
   1. Static tier  — auger/data/widget_manifests.yaml  (git-committed, describes all widgets)
-  2. Learned tier — ~/.auger/widget_knowledge/{widget_name}.yaml  (runtime discoveries by Auger)
+  2. Learned tier — ~/.platformgen/widget_knowledge/{widget_name}.yaml  (runtime discoveries by Genny)
 
 Usage:
-    from auger.ui.widget_manifest import build_manifest_context, save_learned
+    from platformgen.ui.widget_manifest import build_manifest_context, save_learned
     context = build_manifest_context()   # compact [WIDGET KNOWLEDGE] block for prompt injection
     save_learned("gchat", "AUGER channel is paused — use AUGER_POC")
 """
@@ -14,20 +14,33 @@ Usage:
 from __future__ import annotations
 import yaml
 from pathlib import Path
+from platformgen.runtime import repo_dir, state_dir
 
 # Static manifest file (shipped with platform)
 _STATIC_CANDIDATES = [
     Path(__file__).parent.parent / "data" / "widget_manifests.yaml",
-    Path("/home/auger/repos/auger-ai-sre-platform/auger/data/widget_manifests.yaml"),
-    Path.home() / "repos" / "auger-ai-sre-platform" / "auger" / "data" / "widget_manifests.yaml",
+    Path(__file__).resolve().parents[2] / "auger" / "data" / "widget_manifests.yaml",
+    Path(__file__).resolve().parents[2] / "platformgen" / "data" / "widget_manifests.yaml",
 ]
 
-# Learned knowledge directory (Auger-owned, persists across sessions)
-LEARNED_DIR = Path.home() / ".auger" / "widget_knowledge"
+# Learned knowledge directory (runtime-owned, persists across sessions)
+LEARNED_DIR = state_dir() / "widget_knowledge"
+
+_repo = repo_dir()
+if _repo:
+    _STATIC_CANDIDATES.extend([
+        _repo / "auger" / "data" / "widget_manifests.yaml",
+        _repo / "platformgen" / "data" / "widget_manifests.yaml",
+    ])
 
 
 def _load_static() -> dict:
+    seen: set[Path] = set()
     for candidate in _STATIC_CANDIDATES:
+        candidate = Path(candidate)
+        if candidate in seen:
+            continue
+        seen.add(candidate)
         if candidate.exists():
             try:
                 data = yaml.safe_load(candidate.read_text()) or {}
@@ -50,7 +63,7 @@ def _load_learned(widget_name: str) -> dict:
 def save_learned(widget_name: str, discovery: str) -> None:
     """Persist a new discovery about a widget to the learned tier.
     
-    Call this when Auger discovers something about a widget through actual use
+    Call this when Genny discovers something about a widget through actual use
     that should be remembered across sessions.
     
     Example:

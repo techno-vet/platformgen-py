@@ -1,23 +1,20 @@
 """Shared Tkinter UX utilities — copy/paste, right-click menus, mouse wheel."""
-import os
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
+from platformgen.runtime import host_home
 
 
 def auger_home() -> Path:
     """Return the real user home directory.
 
-    Inside the Docker container the personalized image sets AUGER_HOST_HOME
-    and HOME correctly. This reads AUGER_HOST_HOME first (most reliable),
-    then HOME, then falls back to Path.home() for venv/dev use.
+    Legacy helper name retained for compatibility with existing imports.
+    Inside Docker the personalized image sets PLATFORMGEN_HOST_HOME
+    (with AUGER_HOST_HOME fallback) so this resolves to the host user's
+    real home rather than the baked `/home/auger` base-image path.
     Never returns /home/auger — that is the legacy base-image path.
     """
-    for var in ('AUGER_HOST_HOME', 'HOME'):
-        val = os.environ.get(var)
-        if val and val != '/home/auger':
-            return Path(val)
-    return Path.home()
+    return host_home()
 
 
 def make_text_copyable(widget):

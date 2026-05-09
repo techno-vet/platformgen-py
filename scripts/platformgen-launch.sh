@@ -10,23 +10,24 @@
 #   bash platformgen-launch.sh --venv --background   # Native venv mode detached
 #   bash platformgen-launch.sh --docker      # Explicit Docker/SRE mode
 #   bash platformgen-launch.sh --venv --install-only   # Install deps only, don't start
+#   bash platformgen-launch.sh --venv --home "$HOME/.platformgen-preview" --daemon-port 7438
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 set -o pipefail
 
-IMAGE="${AUGER_IMAGE:-artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:20260311}"
-LOCAL_BASE_IMAGE="${AUGER_LOCAL_BASE_IMAGE:-auger-platform:latest}"
-CONTAINER="${AUGER_CONTAINER_NAME:-auger-platform}"
-AUGER_DIR="${AUGER_HOME:-$HOME/.platformgen}"
+IMAGE="${PLATFORMGEN_IMAGE:-${AUGER_IMAGE:-artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:20260311}}"
+LOCAL_BASE_IMAGE="${PLATFORMGEN_LOCAL_BASE_IMAGE:-${AUGER_LOCAL_BASE_IMAGE:-platformgen-platform:latest}}"
+LEGACY_LOCAL_BASE_IMAGE="${AUGER_LOCAL_BASE_IMAGE_LEGACY:-auger-platform:latest}"
+CONTAINER="${PLATFORMGEN_CONTAINER_NAME:-${AUGER_CONTAINER_NAME:-platformgen-platform}}"
+DEFAULT_AUGER_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROGRESS_LOG="$AUGER_DIR/startup-progress.log"
 APP_TITLE="${AUGER_LAUNCHER_TITLE:-PlatformGen}"
 DESKTOP_SLUG="${AUGER_DESKTOP_SLUG:-platformgen}"
 WM_CLASS="${AUGER_WM_CLASS:-platformgen-platform}"
 TRAY_START_SCRIPT="${AUGER_TRAY_START_SCRIPT:-$SCRIPT_DIR/start-platformgen-tray.sh}"
 LAUNCHER_SCRIPT="${AUGER_LAUNCHER_SCRIPT:-$SCRIPT_DIR/platformgen-launch.sh}"
-DAEMON_PORT="${AUGER_DAEMON_PORT:-7437}"
+DEFAULT_DAEMON_PORT="${PLATFORMGEN_DAEMON_PORT:-${AUGER_DAEMON_PORT:-7438}}"
 
 start_progress_dialog() {
     mkdir -p "$AUGER_DIR"
@@ -197,14 +198,38 @@ VENV_MODE=0
 DOCKER_MODE=0
 INSTALL_ONLY=0
 BACKGROUND_MODE=0
-for arg in "$@"; do
-    case "$arg" in
+CLI_HOME=""
+CLI_DAEMON_PORT=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --venv|--lite)         VENV_MODE=1; DOCKER_MODE=0 ;;
         --docker|--sre)        DOCKER_MODE=1; VENV_MODE=0 ;;
         --install-only)        INSTALL_ONLY=1 ;;
         --background|--detach) BACKGROUND_MODE=1 ;;
+        --home|--config-dir)
+            if [ "$#" -lt 2 ]; then
+                echo "[ERROR]  $1 requires a path argument."
+                exit 1
+            fi
+            CLI_HOME="$2"
+            shift
+            ;;
+        --daemon-port)
+            if [ "$#" -lt 2 ]; then
+                echo "[ERROR]  --daemon-port requires a port value."
+                exit 1
+            fi
+            CLI_DAEMON_PORT="$2"
+            shift
+            ;;
     esac
+    shift
 done
+
+AUGER_DIR="${CLI_HOME:-$DEFAULT_AUGER_DIR}"
+DAEMON_PORT="${CLI_DAEMON_PORT:-$DEFAULT_DAEMON_PORT}"
+PROGRESS_LOG="$AUGER_DIR/startup-progress.log"
+export PLATFORMGEN_HOME="$AUGER_DIR"
 
 # Ensure ~/.local/bin is in PATH (for copilot, auger CLI, etc.)
 if [ -z "$PATH" ]; then
@@ -332,13 +357,14 @@ PY
         else
             echo "   Using token from ~/.platformgen/.env"
         fi
-        "$VENV_DIR/bin/python3" -m platformgen init --token "$_INIT_TOKEN" || true
+        env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" \
+            "$VENV_DIR/bin/python3" -m platformgen init --config-dir "$AUGER_DIR" --token "$_INIT_TOKEN" || true
     fi
 
     # Start host tools daemon if not already running
     if ! curl -sf "http://localhost:${DAEMON_PORT}/health" >/dev/null 2>&1; then
         echo "[SETUP]  Starting host tools daemon..."
-        nohup "$VENV_DIR/bin/python3" "$SCRIPT_DIR/host_tools_daemon.py" \
+        nohup env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" "$VENV_DIR/bin/python3" "$SCRIPT_DIR/host_tools_daemon.py" \
             > "$AUGER_DIR/daemon.log" 2>&1 &
         DAEMON_PID=$!
         echo "$DAEMON_PID" > "$AUGER_DIR/daemon.pid"
@@ -369,7 +395,7 @@ PY
         fi
 
         echo "[START]  Starting PlatformGen (venv mode) in the background..."
-        nohup env AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start \
+        nohup env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start --config-dir "$AUGER_DIR" \
             >> "$VENV_LOG_FILE" 2>&1 &
         _venv_pid=$!
         echo "$_venv_pid" > "$VENV_PID_FILE"
@@ -390,7 +416,7 @@ PY
     echo "   To stop: Ctrl+C or close the window."
     echo ""
 
-    exec env AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start
+    exec env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start --config-dir "$AUGER_DIR"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -497,6 +523,17 @@ build_local_base_image() {
         BASE_IMAGE="$LOCAL_BASE_IMAGE"
         progress_msg "Local PlatformGen base image already up to date: ${BASE_IMAGE}"
         return 0
+    fi
+
+    if [ "$force_rebuild" != "1" ] && [ -z "$existing_hash" ] && [ "$LOCAL_BASE_IMAGE" != "$LEGACY_LOCAL_BASE_IMAGE" ]; then
+        existing_hash="$(docker inspect --format='{{index .Config.Labels "build-hash"}}' "$LEGACY_LOCAL_BASE_IMAGE" 2>/dev/null || true)"
+        if [ -n "$existing_hash" ] && [ "$existing_hash" = "$build_hash" ]; then
+            progress_msg "Re-tagging legacy local base image ${LEGACY_LOCAL_BASE_IMAGE} -> ${LOCAL_BASE_IMAGE}"
+            docker tag "$LEGACY_LOCAL_BASE_IMAGE" "$LOCAL_BASE_IMAGE"
+            BASE_IMAGE="$LOCAL_BASE_IMAGE"
+            progress_msg "Local PlatformGen base image already up to date: ${BASE_IMAGE}"
+            return 0
+        fi
     fi
 
     current_commit="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -607,7 +644,7 @@ fi
 # Domain usernames like bobbygblair@gtd.gsa.gov are invalid in tags.
 # Strip domain suffix and replace any remaining non-alphanumeric chars with -.
 _SAFE_USER="$(echo "${USER}" | sed 's/@.*//' | tr -cs 'a-zA-Z0-9' '-' | sed 's/-$//' | tr 'A-Z' 'a-z')"
-PERSONALIZED_IMAGE="auger-platform-${_SAFE_USER}:latest"
+PERSONALIZED_IMAGE="platformgen-platform-${_SAFE_USER}:latest"
 FORCE_REBUILD_PERSONALIZED="${AUGER_FORCE_REBUILD_PERSONALIZED:-0}"
 
 if [ "$FORCE_REBUILD_PERSONALIZED" = "1" ]; then
@@ -820,7 +857,7 @@ sleep 5
 if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
     progress_msg "PlatformGen container exited during startup. Recent container logs:"
     docker logs --tail 120 "$CONTAINER" 2>&1 | tee -a "$PROGRESS_LOG" || true
-    progress_error "PlatformGen container failed to start. Check docker logs auger-platform."
+    progress_error "PlatformGen container failed to start. Check docker logs ${CONTAINER}."
     exit 1
 fi
 
@@ -847,5 +884,5 @@ echo ""
 echo "   The PlatformGen window should appear on your screen."
 echo "   The system tray icon (🤖) gives you Open / Ask / Restart / Stop controls."
 echo ""
-echo "   To stop PlatformGen:  docker rm -f auger-platform"
+echo "   To stop PlatformGen:  docker rm -f ${CONTAINER}"
 echo ""

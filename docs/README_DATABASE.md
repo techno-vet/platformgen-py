@@ -1,6 +1,6 @@
 # Database Widget
 
-The **Database** widget is a SQL workbench built into Auger. Run queries, browse schemas, and export results — all without leaving the platform.
+The **Database** widget is a SQL workbench built into PlatformGen. Run queries, browse schemas, and export results — all without leaving the platform.
 
 ## Features
 
@@ -15,13 +15,13 @@ The **Database** widget is a SQL workbench built into Auger. Run queries, browse
 
 ## Supported Databases
 
-- **SQLite** — local `.db` files (default: `~/.auger/tasks.db`)
+- **SQLite** — local `.db` files (default: `~/.platformgen/tasks.db`)
 - **PostgreSQL** — via connection string
 - **MySQL/MariaDB** — via connection string
 
 ## Quick Start
 
-1. The widget opens connected to `~/.auger/tasks.db` by default
+1. The widget opens connected to `~/.platformgen/tasks.db` by default
 2. Type a query in the editor: `SELECT * FROM tasks WHERE status = 'In Progress';`
 3. Press **Ctrl+Enter** to run
 4. Results appear in the grid below
@@ -38,4 +38,4 @@ DATABASE_URL=postgresql://user:password@hostname:5432/dbname
 SQLITE_PATH=/path/to/your.db
 ```
 
-> **Tip:** Ask Auger to help: *"Write a query to find all tasks created in the last 7 days"*
+> **Tip:** Ask Genny to help: *"Write a query to find all tasks created in the last 7 days"*

@@ -3,16 +3,12 @@ auger.tools.git_workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~
 Auto-managed feature branches for widget changes.
 
-When a user creates or modifies a widget (via Ask Auger or directly), the
-platform calls these helpers to:
-  1. Locate the canonical ~/repos/auger-ai-sre-platform clone
+When a user creates or modifies a widget, the platform calls these helpers to:
+  1. Locate the active PlatformGen repo clone
   2. Create a feature branch  feature/widget-<name>-YYYYMMDD
   3. Commit the widget file with a meaningful message
   4. Push the branch to origin
   5. Return a PR URL for the user to open
-
-Works from both host terminal and inside the container (~/repos is mounted
-into the container at /home/auger/repos).
 """
 
 from __future__ import annotations
@@ -24,23 +20,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from platformgen.runtime import repo_dir
+
 
 # ── Repo discovery ─────────────────────────────────────────────────────────────
 
 def get_auger_repo() -> Optional[Path]:
-    """Return the path to the auger-ai-sre-platform git repo.
+    """Return the path to the active PlatformGen git repo.
 
     Search order:
-      1. ~/repos/auger-ai-sre-platform  (canonical developer location)
-      2. /home/auger/repos/auger-ai-sre-platform  (container path)
-      3. The directory containing this file (dev/work-folder fallback)
+      1. Runtime-configured repo_dir()
+      2. The directory containing this file (dev/work-folder fallback)
+      3. The current working directory if it is a git repo
     """
     candidates = [
-        Path.home() / "repos" / "auger-ai-sre-platform",
-        Path("/home/auger/repos/auger-ai-sre-platform"),
-        Path(__file__).parent.parent.parent,  # auger/tools/git_workflow.py → repo root
+        repo_dir(),
+        Path(__file__).resolve().parents[2],  # auger/tools/git_workflow.py → repo root
+        Path.cwd(),
     ]
+    seen: set[Path] = set()
     for path in candidates:
+        if not path:
+            continue
+        path = Path(path)
+        if path in seen:
+            continue
+        seen.add(path)
         if (path / ".git").exists():
             return path
     return None
@@ -110,7 +115,7 @@ def commit_widget(repo: Path, widget_file: Path, message: str | None = None) -> 
     if not message:
         message = (
             f"feat: add/update widget {widget_name}\n\n"
-            f"Auto-committed by Auger platform via git_workflow.\n\n"
+            f"Auto-committed by PlatformGen via git_workflow.\n\n"
             f"Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
         )
     _git(repo, "add", str(rel))
@@ -206,12 +211,18 @@ def handle_widget_change(widget_path: str | Path) -> dict:
     widget_path = Path(widget_path).expanduser()
     repo = get_auger_repo()
     if not repo:
-        return {"success": False, "message": "Could not find auger-ai-sre-platform repo"}
+        return {"success": False, "message": "Could not find the active PlatformGen repo"}
 
     # If path is relative or tilde-expanded but still missing, try resolving
     # against the repo widgets directory
     if not widget_path.exists() and not widget_path.is_absolute():
-        widget_path = repo / "auger" / "ui" / "widgets" / widget_path.name
+        for candidate in (
+            repo / "auger" / "ui" / "widgets" / widget_path.name,
+            repo / "platformgen" / "ui" / "widgets" / widget_path.name,
+        ):
+            if candidate.exists():
+                widget_path = candidate
+                break
 
     if not widget_path.exists():
         return {"success": False, "message": f"Widget file not found: {widget_path}"}

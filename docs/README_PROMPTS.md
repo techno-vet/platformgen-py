@@ -1,10 +1,10 @@
 # Prompts Widget
 
-The **Prompts** widget is Auger's knowledge management center. It stores **Rules**, **Conventions**, **Standards**, and custom **Prompts** that are automatically injected into every Ask Auger conversation — keeping the AI grounded in your team's processes.
+The **Prompts** widget is PlatformGen's knowledge management center. It stores **Rules**, **Conventions**, **Standards**, and custom **Prompts** that are automatically injected into every Ask Genny conversation — keeping the AI grounded in your team's processes.
 
 ## What Gets Injected
 
-Every time you use Ask Auger, the platform injects the full set of active rules, conventions, and standards as context. This means Auger always knows:
+Every time you use Ask Genny, the platform injects the full set of active rules, conventions, and standards as context. This means Genny always knows:
 
 - Your branching and commit conventions
 - Production safety rules (e.g., 2-approval requirement for flux-config)
@@ -28,7 +28,7 @@ Reusable prompt templates for common SRE tasks (deploy checklist, incident runbo
 ## Storage
 
 - **Repo defaults**: `<repo>/auger/data/origin/` — checked into git, shared with all SREs
-- **User overrides**: `~/.auger/rules.yaml`, `~/.auger/conventions.yaml`, `~/.auger/prompts.yaml`
+- **User overrides**: `~/.platformgen/rules.yaml`, `~/.platformgen/conventions.yaml`, `~/.platformgen/prompts.yaml`
 
 When the same `id` exists in both, the user file wins. This lets you personalize without changing shared defaults.
 
@@ -40,4 +40,4 @@ When the same `id` exists in both, the user file wins. This lets you personalize
 
 New items added via the widget are saved to your user file only. To make a rule available to all SREs, edit the repo file and commit it.
 
-> **Tip:** Ask Auger to add a new rule: *"Add a rule that we never delete prod databases without a Jira ticket"*
+> **Tip:** Ask Genny to add a new rule: *"Add a rule that we never delete prod databases without a Jira ticket"*

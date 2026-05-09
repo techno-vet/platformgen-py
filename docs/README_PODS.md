@@ -1,6 +1,6 @@
 # Pods Widget
 
-The **Pods** widget is a Kubernetes pod status monitor. View pod health across clusters and namespaces, stream logs, exec into containers, and trigger restarts — all from inside Auger.
+The **Pods** widget is a Kubernetes pod status monitor. View pod health across clusters and namespaces, stream logs, exec into containers, and trigger restarts — all from inside PlatformGen.
 
 ## Features
 
@@ -21,7 +21,7 @@ The **Pods** widget is a Kubernetes pod status monitor. View pod health across c
 Uses `~/.kube/config` (volume-mounted from the host). The widget respects your active kubeconfig context and all configured clusters.
 
 ```bash
-# Switch context from the Shell Terminal widget or Ask Auger:
+# Switch context from the Shell Terminal widget or Ask Genny:
 kubectl config use-context my-cluster
 ```
 
@@ -44,6 +44,6 @@ For rollout monitoring, prefer generating a Rancher-backed kubeconfig and using 
 **View logs for a failing pod:**
 > Select the pod → click **Logs** → logs stream in the right pane
 
-**Ask Auger to investigate:**
+**Ask Genny to investigate:**
 > *"Why is pod data-utils-api-xyz crashing?"*
-> Auger will pull logs, describe the pod, and suggest fixes.
+> Genny will pull logs, describe the pod, and suggest fixes.

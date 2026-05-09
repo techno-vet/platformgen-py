@@ -4,7 +4,7 @@ PlatformGen main entry point.
 Allows running: python -m auger
 """
 
-from auger.cli import platformgen_main
+from platformgen.cli import platformgen_main
 
 if __name__ == '__main__':
     platformgen_main()

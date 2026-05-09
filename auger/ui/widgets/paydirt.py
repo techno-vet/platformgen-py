@@ -12,8 +12,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from auger.tools import paydirt as _paydirt
-from auger.ui import icons as _icons
-from auger.ui.utils import add_treeview_menu
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import add_treeview_menu
 
 _paydirt = importlib.reload(_paydirt)
 

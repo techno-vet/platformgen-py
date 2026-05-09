@@ -5,7 +5,7 @@ DOCS_DIR = Path(__file__).parent.parent.parent / 'docs'
 
 # (display label, filename)  — widget-specific docs
 WIDGET_DOCS = [
-    ("Ask Auger / Copilot", "AUGER_ASK.md"),
+    ("Ask Genny / Copilot", "AUGER_ASK.md"),
     ("Tasks",            "README_TASKS.md"),
     ("Prompts",          "README_PROMPTS.md"),
     ("API Keys+",        "README_API_CONFIG.md"),
@@ -34,7 +34,6 @@ WIDGET_DOCS = [
 GENERAL_DOCS = [
     ("Quick Start",    "QUICKSTART.md"),
     ("Docker Setup",   "DOCKER.md"),
-    ("Project Summary","PROJECT_SUMMARY.md"),
 ]
 
 # Combined flat list: (label, full_path)

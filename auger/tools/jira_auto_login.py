@@ -2,7 +2,7 @@
 """
 Jira Auto-Login with Selenium
 Opens Chrome, navigates to gsa-standard.atlassian-us-gov-mod.net, waits for user to complete PIV/MFA,
-then captures session cookies and saves them to ~/.auger/.env.
+then captures session cookies and saves them to the runtime .env.
 """
 import os
 import sys
@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
 from dotenv import load_dotenv, set_key
+from platformgen.runtime import state_dir
 
 try:
     from selenium import webdriver
@@ -30,7 +31,7 @@ class JiraAutoLogin:
     """Automated Jira login with cookie capture."""
 
     def __init__(self, instance_url: str | None = None):
-        self.env_file = Path.home() / '.auger' / '.env'
+        self.env_file = state_dir() / '.env'
         load_dotenv(self.env_file)
         self.instance_url = (
             instance_url or
@@ -116,7 +117,7 @@ class JiraAutoLogin:
         return False
 
     def _save_cookies(self, selenium_cookies: list):
-        """Convert Selenium cookies to dict and save to ~/.auger/.env."""
+        """Convert Selenium cookies to dict and save to the runtime .env."""
         cookie_dict = {c['name']: c['value'] for c in selenium_cookies}
         expiry = datetime.now() + timedelta(hours=12)
         set_key(str(self.env_file), 'JIRA_URL',           self.instance_url)

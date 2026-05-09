@@ -7,7 +7,8 @@ What it does:
 - Finds the most-recent session under ~/.copilot/session-state if --session not given
 - Scans events.jsonl for user/assistant messages and builds a transcript
 - Starts a new Copilot session by sending the transcript as a prompt (single call)
-- Detects the newly-created session-id and writes it to ~/.auger/.session_id (unless --dry-run)
+- Detects the newly-created session-id and writes it to the runtime pinned-session storage
+  (plus legacy `.session_id` compatibility for the default auto scope).
 
 This is a best-effort helper to recover state into a fresh session.
 """
@@ -17,6 +18,9 @@ import os
 import subprocess
 import time
 from pathlib import Path
+
+from auger.ai.provider_sessions import copilot_pin_path, write_copilot_pinned_session_id
+from platformgen.runtime import state_dir
 
 
 def find_most_recent_session():
@@ -112,11 +116,12 @@ def detect_new_session(old_session_id=None):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--session', help='Session id to recover from')
+    p.add_argument('--model', default='auto', help='Pinned Copilot model scope to update (default: auto)')
     p.add_argument('--dry-run', action='store_true')
     args = p.parse_args()
 
-    auger_dir = Path.home() / '.auger'
-    auger_dir.mkdir(parents=True, exist_ok=True)
+    runtime_dir = state_dir()
+    runtime_dir.mkdir(parents=True, exist_ok=True)
 
     # determine source session
     if args.session:
@@ -150,9 +155,9 @@ def main():
         + transcript
     )
 
-    # prepare env: load ~/.auger/.env if present
+    # prepare env: load runtime .env if present
     env = os.environ.copy()
-    env_file = auger_dir / '.env'
+    env_file = runtime_dir / '.env'
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             line = line.strip()
@@ -173,7 +178,7 @@ def main():
         return 0
 
     import fcntl
-    lock = auger_dir / '.copilot.lock'
+    lock = runtime_dir / '.copilot.lock'
     with open(lock, 'w') as lf:
         fcntl.flock(lf, fcntl.LOCK_EX)
         try:
@@ -191,15 +196,16 @@ def main():
 
     print('Detected new session id:', new_id)
     if args.dry_run:
-        print('Dry-run; not writing ~/.auger/.session_id')
+        print(f"Dry-run; not writing pinned session files under {runtime_dir}")
         return 0
 
-    # backup existing
-    sid_file = auger_dir / '.session_id'
+    sid_file = runtime_dir / '.session_id'
     if sid_file.exists():
-        sid_file.rename(auger_dir / f'.session_id.bak-{int(time.time())}')
-    sid_file.write_text(new_id)
-    print('Wrote new session id to', sid_file)
+        sid_file.rename(runtime_dir / f'.session_id.bak-{int(time.time())}')
+    write_copilot_pinned_session_id(args.model, new_id)
+    print('Wrote Copilot pinned session id to', copilot_pin_path(args.model))
+    if args.model == 'auto':
+        print('Updated legacy compatibility session file at', sid_file)
     return 0
 
 

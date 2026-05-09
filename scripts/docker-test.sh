@@ -5,7 +5,7 @@
 set -e
 
 echo "=========================================="
-echo "🧪 Auger Platform - Automated Test"
+echo "🧪 PlatformGen - Automated Test"
 echo "=========================================="
 echo ""
 
@@ -28,7 +28,7 @@ echo "GH CLI: $(gh --version | head -1)"
 if command -v copilot &> /dev/null; then
     echo "Copilot: $(copilot --version 2>&1 | head -1)"
 else
-    echo "[WARN]  Copilot CLI not found (needed for Ask Auger)"
+    echo "[WARN]  Copilot CLI not found (needed for Ask Genny)"
 fi
 
 echo ""
@@ -43,12 +43,23 @@ else
 fi
 
 echo ""
-echo "[PKG] Installing Auger Platform"
+echo "[PKG] Installing PlatformGen"
 echo "----------------------------------------"
 
 # Copy to a writable location
 echo "Copying source to writable directory..."
-cp -r /home/testuser/auger-platform /tmp/auger-build
+SOURCE_ROOT=""
+for candidate in /home/testuser/platformgen-platform /home/testuser/auger-platform; do
+    if [ -d "$candidate" ]; then
+        SOURCE_ROOT="$candidate"
+        break
+    fi
+done
+if [ -z "$SOURCE_ROOT" ]; then
+    echo "[ERROR] Source checkout not found under /home/testuser"
+    exit 1
+fi
+cp -r "$SOURCE_ROOT" /tmp/auger-build
 cd /tmp/auger-build
 
 # Test the install script
@@ -59,12 +70,19 @@ echo ""
 echo "[SEARCH] Verifying Installation"
 echo "----------------------------------------"
 
-# Check if auger command exists
-if command -v auger &> /dev/null; then
-    echo "[OK] auger command found"
-    auger --version
+# Check if CLI command exists
+CLI_BIN=""
+for candidate in platformgen auger; do
+    if command -v "$candidate" &> /dev/null; then
+        CLI_BIN="$candidate"
+        break
+    fi
+done
+if [ -n "$CLI_BIN" ]; then
+    echo "[OK] $CLI_BIN command found"
+    "$CLI_BIN" --version
 else
-    echo "[ERROR] auger command not found"
+    echo "[ERROR] platformgen/auger command not found"
     echo "PATH: $PATH"
     ls -la ~/.local/bin/ || echo "~/.local/bin/ doesn't exist"
     exit 1
@@ -73,15 +91,16 @@ fi
 echo ""
 echo "⚙️  Initializing Configuration"
 echo "----------------------------------------"
-echo "Running: auger init --token \$GITHUB_COPILOT_TOKEN"
-auger init --token "$GITHUB_COPILOT_TOKEN"
+STATE_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-$HOME/.platformgen}}"
+echo "Running: $CLI_BIN init --token \$GITHUB_COPILOT_TOKEN"
+"$CLI_BIN" init --token "$GITHUB_COPILOT_TOKEN"
 
 # Verify config was created
-if [ -f ~/.auger/config.yaml ]; then
+if [ -f "$STATE_DIR/config.yaml" ]; then
     echo "[OK] Config file created"
     echo ""
     echo "Config contents:"
-    cat ~/.auger/config.yaml
+    cat "$STATE_DIR/config.yaml"
 else
     echo "[ERROR] Config file not created"
     exit 1
@@ -92,18 +111,18 @@ echo "🧪 Testing CLI Commands"
 echo "----------------------------------------"
 
 # Test doctor command
-echo "Running: auger doctor"
-auger doctor
+echo "Running: $CLI_BIN doctor"
+"$CLI_BIN" doctor
 
 # Test config command
 echo ""
-echo "Running: auger config"
-auger config
+echo "Running: $CLI_BIN config"
+"$CLI_BIN" config
 
 # Test widgets command
 echo ""
-echo "Running: auger widgets"
-auger widgets
+echo "Running: $CLI_BIN widgets"
+"$CLI_BIN" widgets
 
 echo ""
 echo "🎯 Testing Ask Mode"
@@ -133,5 +152,5 @@ echo "=========================================="
 echo "[OK] All Tests Passed!"
 echo "=========================================="
 echo ""
-echo "Auger Platform is ready for use!"
+echo "PlatformGen is ready for use!"
 echo ""

@@ -29,14 +29,23 @@ from pathlib import Path
 # -- Paths ---------------------------------------------------------------------
 SCRIPT_DIR   = Path(__file__).resolve().parent
 REPO_DIR     = SCRIPT_DIR.parent
-APP_NAME     = os.environ.get("AUGER_APP_NAME", "PlatformGen")
-ASSISTANT_NAME = os.environ.get("AUGER_ASSISTANT_NAME", "Genny")
-AUGER_DIR    = Path(os.environ.get("AUGER_HOME", str(Path.home() / ".platformgen"))).expanduser()
+APP_NAME     = os.environ.get("PLATFORMGEN_APP_NAME") or os.environ.get("AUGER_APP_NAME", "PlatformGen")
+ASSISTANT_NAME = os.environ.get("PLATFORMGEN_ASSISTANT_NAME") or os.environ.get("AUGER_ASSISTANT_NAME", "Genny")
+AUGER_DIR    = Path(
+    os.environ.get("PLATFORMGEN_HOME")
+    or os.environ.get("AUGER_HOME")
+    or str(Path.home() / ".platformgen")
+).expanduser()
+DAEMON_PORT  = int(os.environ.get("PLATFORMGEN_DAEMON_PORT") or os.environ.get("AUGER_DAEMON_PORT") or "7438")
 ENV_FILE     = AUGER_DIR / ".env"
 ENV_TEMPLATE = REPO_DIR / ".env.example"
 LAUNCH_SH    = SCRIPT_DIR / "platformgen-launch.sh"
 ART_REGISTRY = "artifactory.helix.gsa.gov"
-RUNTIME_IMAGE = f"{ART_REGISTRY}/gs-assist-docker-repo/auger-platform:20260311"
+RUNTIME_IMAGE = (
+    os.environ.get("PLATFORMGEN_IMAGE")
+    or os.environ.get("AUGER_IMAGE")
+    or f"{ART_REGISTRY}/gs-assist-docker-repo/auger-platform:20260311"
+)
 GHE_HOST = "github.helix.gsa.gov"
 GHE_URL = f"https://{GHE_HOST}"
 GHE_API_USER = f"{GHE_URL}/api/v3/user"
@@ -1105,8 +1114,8 @@ def _run_setup(wiz):
             try:
                 import urllib.request, urllib.error
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                resp = opener.open("http://localhost:7437/health", timeout=3)
-                w.log_line("  [OK]  Host Tools daemon is healthy (port 7437)", "ok")
+                resp = opener.open(f"http://localhost:{DAEMON_PORT}/health", timeout=3)
+                w.log_line(f"  [OK]  Host Tools daemon is healthy (port {DAEMON_PORT})", "ok")
             except Exception:
                 w.log_line("  [WARN]  Host Tools daemon not responding — it may still be starting", "warn")
 

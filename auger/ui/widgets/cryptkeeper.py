@@ -5,9 +5,9 @@ import subprocess
 import os
 import shlex
 from pathlib import Path
-from auger.ui import icons as _icons
+from platformgen.ui import icons as _icons
 try:
-    from auger.ui.utils import auger_home as _auger_home
+    from platformgen.ui.utils import auger_home as _auger_home
 except ImportError:
     def _auger_home(): return Path.home()
 
@@ -405,7 +405,15 @@ class CryptkeeperWidget(tk.Frame):
     def _encrypt_lite(self, key, value):
         """Fallback: encrypt using cryptkeeper_lite (pure Python Jasypt)"""
         import sys
-        sys.path.insert(0, '/home/auger/auger-platform')
+        from platformgen.runtime import repo_dir
+        for candidate in (
+            str(repo_dir()) if repo_dir() else "",
+            "/home/auger/platformgen-platform",
+            "/home/auger/auger-platform",
+        ):
+            if candidate and candidate not in sys.path:
+                sys.path.insert(0, candidate)
+                break
         from auger.ui.widgets.cryptkeeper_lite import CryptkeeperLiteWidget
         lite = CryptkeeperLiteWidget.__new__(CryptkeeperLiteWidget)
         return lite._encrypt_value(key, value)
@@ -413,7 +421,15 @@ class CryptkeeperWidget(tk.Frame):
     def _decrypt_lite(self, key, value):
         """Fallback: decrypt using cryptkeeper_lite (pure Python Jasypt)"""
         import sys
-        sys.path.insert(0, '/home/auger/auger-platform')
+        from platformgen.runtime import repo_dir
+        for candidate in (
+            str(repo_dir()) if repo_dir() else "",
+            "/home/auger/platformgen-platform",
+            "/home/auger/auger-platform",
+        ):
+            if candidate and candidate not in sys.path:
+                sys.path.insert(0, candidate)
+                break
         from auger.ui.widgets.cryptkeeper_lite import CryptkeeperLiteWidget
         lite = CryptkeeperLiteWidget.__new__(CryptkeeperLiteWidget)
         return lite._decrypt_value(key, value)

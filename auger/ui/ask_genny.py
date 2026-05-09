@@ -34,10 +34,10 @@ from auger.ai.providers import (
     seeded_models,
 )
 from .markdown_widget import MarkdownWidget
-from auger.runtime import assistant_name, cli_name, daemon_url, product_name, state_dir
+from platformgen.runtime import assistant_name, cli_name, daemon_url, product_name, state_dir
 
 try:
-    from auger.tools.git_workflow import handle_widget_change, get_auger_repo, make_branch_name
+    from platformgen.tools.git_workflow import handle_widget_change, get_auger_repo, make_branch_name
     _GIT_WORKFLOW_AVAILABLE = True
 except ImportError:
     _GIT_WORKFLOW_AVAILABLE = False
@@ -1549,7 +1549,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
 
         # Widget AI Manifests — inject compact widget knowledge block
         try:
-            from auger.ui.widget_manifest import build_manifest_context
+            from platformgen.ui.widget_manifest import build_manifest_context
             manifest_block = build_manifest_context()
             if manifest_block:
                 lines.append(manifest_block)
@@ -2052,7 +2052,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         def _fetch():
             try:
                 with urllib.request.urlopen(
-                    'http://localhost:7437/session_status', timeout=3
+                    f'{daemon_url()}/session_status', timeout=3
                 ) as r:
                     return _json.loads(r.read())
             except Exception:
@@ -2127,7 +2127,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
             try:
                 data = _json.dumps({'action': 'unlock_session'}).encode()
                 req = urllib.request.Request(
-                    'http://localhost:7437/cmd',
+                    f'{daemon_url()}/cmd',
                     data=data,
                     headers={'Content-Type': 'application/json'},
                     method='POST'
@@ -2167,7 +2167,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         import urllib.request, json as _json
         try:
             req = urllib.request.Request(
-                'http://localhost:7437/cmd',
+                f'{daemon_url()}/cmd',
                 data=_json.dumps({'action': 'cancel_ask'}).encode(),
                 headers={'Content-Type': 'application/json'},
                 method='POST',
@@ -2261,7 +2261,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 import urllib.request, json as _j
                 try:
                     with urllib.request.urlopen(
-                        'http://localhost:7437/session_status', timeout=3
+                        f'{daemon_url()}/session_status', timeout=3
                     ) as r:
                         data = _j.loads(r.read())
                     locked = data.get('locked', False)
@@ -2353,11 +2353,11 @@ All other messages are sent directly to the selected provider as normal prompts.
     def _run_via_daemon(self, prompt: str, action: str):
         """Forward a host-scope request to the daemon and stream response."""
         import urllib.request, urllib.error
-        daemon_url = f'http://localhost:7437/{action.replace("_auger", "")}'
+        request_url = f'{daemon_url()}/{action.replace("_auger", "")}'
         self._queue.put(('line', f'*Routing to host daemon: `{action}`*\n'))
         try:
             req = urllib.request.Request(
-                daemon_url,
+                request_url,
                 data=__import__('json').dumps({
                     'prompt': prompt,
                     'source': 'container',
@@ -2387,8 +2387,8 @@ All other messages are sent directly to the selected provider as normal prompts.
                         pass
         except urllib.error.URLError as e:
             self._queue.put(('error',
-                f'Daemon not reachable at {daemon_url}: {e}\n'
-                'Is the host daemon running? (check localhost:7437/health)'))
+                f'Daemon not reachable at {request_url}: {e}\n'
+                f'Is the host daemon running? (check {daemon_url()}/health)'))
         except Exception as e:
             # For restart/rebuild, a dropped connection IS success — the container
             # was killed before it could send the final "done" response.
@@ -2426,7 +2426,7 @@ All other messages are sent directly to the selected provider as normal prompts.
             proxy_handler = urllib.request.ProxyHandler({})
             opener = urllib.request.build_opener(proxy_handler)
             req = urllib.request.Request(
-                'http://localhost:7437/listen',
+                f'{daemon_url()}/listen',
                 data=_json.dumps({'action': 'start'}).encode(),
                 headers={'Content-Type': 'application/json'},
                 method='POST'
@@ -2444,7 +2444,7 @@ All other messages are sent directly to the selected provider as normal prompts.
             proxy_handler = urllib.request.ProxyHandler({})
             opener = urllib.request.build_opener(proxy_handler)
             req = urllib.request.Request(
-                'http://localhost:7437/listen',
+                f'{daemon_url()}/listen',
                 data=_json.dumps({'action': 'stop'}).encode(),
                 headers={'Content-Type': 'application/json'},
                 method='POST'

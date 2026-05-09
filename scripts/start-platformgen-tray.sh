@@ -4,17 +4,17 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUGER_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-${AUGER_DIR:-$HOME/.platformgen}}}"
-TRAY_SCRIPT="${AUGER_TRAY_SCRIPT:-$SCRIPT_DIR/platformgen_tray.py}"
+STATE_DIR="${PLATFORMGEN_HOME:-${AUGER_HOME:-${AUGER_DIR:-$HOME/.platformgen}}}"
+TRAY_SCRIPT="${PLATFORMGEN_TRAY_SCRIPT:-${AUGER_TRAY_SCRIPT:-$SCRIPT_DIR/platformgen_tray.py}}"
 DAEMON_SCRIPT="$SCRIPT_DIR/host_tools_daemon.py"
 HOST_PYTHON="/usr/bin/python3"
 HOST_PIP="/usr/bin/pip3"
-DAEMON_PORT="${AUGER_DAEMON_PORT:-7437}"
+DAEMON_PORT="${PLATFORMGEN_DAEMON_PORT:-${AUGER_DAEMON_PORT:-7438}}"
 
 [ -x "$HOST_PYTHON" ] || HOST_PYTHON="$(command -v python3)"
 [ -x "$HOST_PIP" ] || HOST_PIP="$(command -v pip3)"
 
-mkdir -p "$AUGER_DIR"
+mkdir -p "$STATE_DIR"
 
 DISPLAY_VAL="${DISPLAY:-}"
 if [ -z "$DISPLAY_VAL" ]; then
@@ -35,13 +35,13 @@ if [ -f "$DAEMON_SCRIPT" ] && ! curl -sf --noproxy localhost "http://localhost:$
     fi
 
     echo "[NET]  Starting Host Tools daemon on port ${DAEMON_PORT}..."
-    nohup "$HOST_PYTHON" "$DAEMON_SCRIPT" >> "$AUGER_DIR/daemon.log" 2>&1 &
+    nohup "$HOST_PYTHON" "$DAEMON_SCRIPT" >> "$STATE_DIR/daemon.log" 2>&1 &
     DAEMON_PID=$!
     disown "$DAEMON_PID"
 
     for _i in $(seq 1 20); do
         if curl -sf --noproxy localhost "http://localhost:${DAEMON_PORT}/health" >/dev/null 2>&1; then
-            echo "$DAEMON_PID" > "$AUGER_DIR/daemon.pid"
+            echo "$DAEMON_PID" > "$STATE_DIR/daemon.pid"
             echo "[OK]  Daemon ready (PID $DAEMON_PID)"
             break
         fi
@@ -99,7 +99,7 @@ setsid env -u GTK_EXE_PREFIX -u GTK_PATH -u GTK_DATA_PREFIX -u GTK_IM_MODULE_FIL
     -u GIO_MODULE_DIR -u GIO_EXTRA_MODULES -u GI_TYPELIB_PATH \
     -u GDK_PIXBUF_MODULEDIR -u GDK_PIXBUF_MODULE_FILE -u GTK_MODULES \
     -u LD_LIBRARY_PATH -u PYTHONHOME \
-    "$HOST_PYTHON" "$TRAY_SCRIPT" >> "$AUGER_DIR/tray.log" 2>&1 &
+    "$HOST_PYTHON" "$TRAY_SCRIPT" >> "$STATE_DIR/tray.log" 2>&1 &
 TRAY_PID=$!
 disown "$TRAY_PID"
 
@@ -107,6 +107,6 @@ sleep 2
 if "$HOST_PYTHON" -c "import subprocess; r=subprocess.run(['pgrep','-f','platformgen_tray.py|auger_tray.py'],capture_output=True); exit(0 if r.stdout.strip() else 1)" 2>/dev/null; then
     echo "[OK]  Tray applet running (PID $TRAY_PID)"
 else
-    echo "[WARN]  Tray applet failed to start — check $AUGER_DIR/tray.log"
-    tail -5 "$AUGER_DIR/tray.log" 2>/dev/null | sed 's/^/   /'
+    echo "[WARN]  Tray applet failed to start — check $STATE_DIR/tray.log"
+    tail -5 "$STATE_DIR/tray.log" 2>/dev/null | sed 's/^/   /'
 fi

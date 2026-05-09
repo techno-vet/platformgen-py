@@ -4,7 +4,7 @@ PlatformGen system tray applet
 Runs on the HOST machine (not inside the Docker container).
 
 Provides a GNOME status-area icon with:
-  - Green/red indicator based on daemon health (:7437/health)
+  - Green/red indicator based on daemon health
   - Open PlatformGen (bring window to front)
   - Quick Ask Genny... (floating prompt -> streams response)
   - Restart PlatformGen
@@ -83,13 +83,22 @@ except ImportError:
     print("  pip3 install --user pystray pillow")
     sys.exit(1)
 
-APP_NAME = os.environ.get("AUGER_APP_NAME", "PlatformGen")
-PRODUCT_NAME = os.environ.get("AUGER_PRODUCT_NAME", APP_NAME)
-ASSISTANT_NAME = os.environ.get("AUGER_ASSISTANT_NAME", "Genny")
-CLI_NAME = os.environ.get("AUGER_CLI_NAME", "genny")
-DAEMON_URL = f"http://localhost:{os.environ.get('AUGER_DAEMON_PORT', '7437')}"
+APP_NAME = os.environ.get("PLATFORMGEN_APP_NAME") or os.environ.get("AUGER_APP_NAME", "PlatformGen")
+PRODUCT_NAME = os.environ.get("PLATFORMGEN_PRODUCT_NAME") or os.environ.get("AUGER_PRODUCT_NAME", APP_NAME)
+ASSISTANT_NAME = os.environ.get("PLATFORMGEN_ASSISTANT_NAME") or os.environ.get("AUGER_ASSISTANT_NAME", "Genny")
+CLI_NAME = os.environ.get("PLATFORMGEN_CLI_NAME") or os.environ.get("AUGER_CLI_NAME", "genny")
+DAEMON_PORT = (
+    os.environ.get("PLATFORMGEN_DAEMON_PORT")
+    or os.environ.get("AUGER_DAEMON_PORT")
+    or "7438"
+)
+DAEMON_URL = f"http://localhost:{DAEMON_PORT}"
 POLL_INTERVAL = 10   # seconds between health checks
-CONTAINER_NAME = os.environ.get("AUGER_CONTAINER_NAME", "platformgen-platform")
+CONTAINER_NAME = (
+    os.environ.get("PLATFORMGEN_CONTAINER_NAME")
+    or os.environ.get("AUGER_CONTAINER_NAME")
+    or "platformgen-platform"
+)
 STATE_DIR = Path(
     os.environ.get("PLATFORMGEN_HOME")
     or os.environ.get("AUGER_HOME")
@@ -106,12 +115,19 @@ HOST_PROCESS_PATTERNS = (
 
 # Image used for update checks.  Override via env var for local dev.
 IMAGE = os.environ.get(
-    "AUGER_IMAGE",
-    "artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:latest",
+    "PLATFORMGEN_IMAGE",
+    os.environ.get(
+        "AUGER_IMAGE",
+        "artifactory.helix.gsa.gov/gs-assist-docker-repo/auger-platform:latest",
+    ),
 )
 SCRIPT_DIR = Path(__file__).resolve().parent
 # Script that starts the runtime (used after an image update or when tray starts PlatformGen)
-LAUNCH_SCRIPT = os.environ.get("AUGER_LAUNCHER_SCRIPT", str(SCRIPT_DIR / "platformgen-launch.sh"))
+LAUNCH_SCRIPT = (
+    os.environ.get("PLATFORMGEN_LAUNCHER_SCRIPT")
+    or os.environ.get("AUGER_LAUNCHER_SCRIPT")
+    or str(SCRIPT_DIR / "platformgen-launch.sh")
+)
 TRAY_TITLE_BASE = f"{PRODUCT_NAME} — Ask {ASSISTANT_NAME}"
 HOST_RUNTIME_LABEL = PRODUCT_NAME
 DOCKER_RUNTIME_LABEL = f"{PRODUCT_NAME} Docker Runtime"
@@ -237,14 +253,19 @@ def _personalized_image_present() -> bool:
         safe_user = "".join(ch if ch.isalnum() else "-" for ch in os.environ.get("USER", "auger").split("@")[0]).strip("-").lower()
         if not safe_user:
             return False
-        image = f"auger-platform-{safe_user}:latest"
-        r = subprocess.run(
-            ["docker", "image", "inspect", image],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return r.returncode == 0
+        for image in (
+            f"platformgen-platform-{safe_user}:latest",
+            f"auger-platform-{safe_user}:latest",
+        ):
+            r = subprocess.run(
+                ["docker", "image", "inspect", image],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if r.returncode == 0:
+                return True
+        return False
     except Exception:
         return False
 
@@ -783,7 +804,7 @@ def _restart_daemon(icon, item):
       1. If the daemon is alive, use /restart_daemon endpoint — it closes its
          own socket before spawning a child, avoiding port-conflict crashes.
       2. If the daemon is already dead, kill by PID file then start fresh.
-    Never do both — that races two new processes for port 7437.
+    Never do both — that races two new processes for the same daemon port.
     """
     icon.icon = DRILL_YELLOW
     icon.title = _tray_title("Restarting daemon…")

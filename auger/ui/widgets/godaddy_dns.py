@@ -9,7 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 import requests
 from dotenv import load_dotenv
 
-from auger.runtime import state_dir
+from platformgen.runtime import state_dir
 
 ENV_FILE = state_dir() / ".env"
 

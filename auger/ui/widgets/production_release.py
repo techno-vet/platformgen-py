@@ -12,8 +12,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.runtime import state_dir
 
 
 def _shared_atlassian_session(instance_url: str):
@@ -21,7 +22,7 @@ def _shared_atlassian_session(instance_url: str):
     import requests
     from dotenv import load_dotenv
 
-    load_dotenv(Path.home() / '.auger' / '.env', override=True)
+    load_dotenv(state_dir() / '.env', override=True)
     session = requests.Session()
     session.headers.update({'Accept': 'application/json'})
 
@@ -62,7 +63,7 @@ class ProductionReleaseWidget(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.configure(style='Dark.TFrame')
-        self.db_path = Path.home() / '.auger' / 'logs' / 'deployments.db'
+        self.db_path = state_dir() / 'logs' / 'deployments.db'
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.current_deployment_id = None
         self._icons = {}
@@ -429,9 +430,9 @@ class ProductionReleaseWidget(ttk.Frame):
         
         page_id = match.group(1)
         
-        # Load credentials from ~/.auger/.env
+        # Load credentials from the runtime .env
         from dotenv import load_dotenv
-        load_dotenv(Path.home() / '.auger' / '.env', override=True)
+        load_dotenv(state_dir() / '.env', override=True)
 
         base_url = os.getenv('CONFLUENCE_BASE_URL', 'https://gsa-standard.atlassian-us-gov-mod.net/wiki')
         token = os.getenv('CONFLUENCE_TOKEN', '')
@@ -440,7 +441,7 @@ class ProductionReleaseWidget(ttk.Frame):
         if not token and not has_jira_cookies:
             response = messagebox.askyesno(
                 "Confluence Authentication Missing",
-                "No Jira MFA cookies or Confluence token were found in ~/.auger/.env.\n\n"
+                f"No Jira MFA cookies or Confluence token were found in {state_dir() / '.env'}.\n\n"
                 "Please authenticate with the Jira widget or configure a Confluence token in API Config."
             )
             if response:
@@ -1125,7 +1126,7 @@ class ProductionReleaseWidget(ttk.Frame):
         
         if row and row[0]:
             import webbrowser
-            from auger.tools.host_cmd import open_url as _open_url; _open_url(row[0])
+            from platformgen.tools.host_cmd import open_url as _open_url; _open_url(row[0])
             
     def _update_pr_status(self):
         """Update PR status"""

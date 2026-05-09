@@ -4,13 +4,13 @@ PlatformGen Host Tools HTTP Daemon
 Runs on the host machine, accepts JSON commands from the Docker container.
 
 Since the container uses --network host, both host and container share
-localhost, so the daemon is reachable at http://localhost:7437 from anywhere.
+localhost, so the daemon is reachable at http://localhost:$PORT from anywhere.
 
 Usage:
     nohup python3 scripts/host_tools_daemon.py > ~/.platformgen/daemon.log 2>&1 &
 
 Endpoints:
-    GET  /health      -> {"status":"ok","port":7437}
+    GET  /health      -> {"status":"ok","port":$PORT}
     POST /cmd         -> {"action": "...", ...}  -> JSON response or NDJSON stream
     POST /listen      -> {"action": "start"|"stop"} -> voice capture + transcription
 """
@@ -56,19 +56,16 @@ from auger.ai.providers import (
     openai_base_url,
     provider_supports_copilot_sessions,
 )
+from auger.runtime import app_name as runtime_app_name, cli_name as runtime_cli_name, repo_dir as runtime_repo_dir, state_dir as runtime_state_dir
 
-PORT = int(os.environ.get('AUGER_DAEMON_PORT', '7437'))
-AUGER_DIR = Path(
-    os.environ.get('PLATFORMGEN_HOME')
-    or os.environ.get('AUGER_HOME')
-    or str(Path.home() / '.platformgen')
-).expanduser()
+PORT = int(os.environ.get('PLATFORMGEN_DAEMON_PORT') or os.environ.get('AUGER_DAEMON_PORT') or '7438')
+AUGER_DIR = runtime_state_dir()
 HOST_TOOLS_FILE = AUGER_DIR / 'host_tools.json'
-REPO_DIR = Path(__file__).parent.parent  # scripts/../ = repo root
+REPO_DIR = runtime_repo_dir() or Path(__file__).resolve().parents[1]
 KEEPALIVE_STATE_FILE = AUGER_DIR / 'keepalive_state.json'
-APP_NAME = os.environ.get('AUGER_APP_NAME', 'PlatformGen')
+APP_NAME = runtime_app_name()
 KEEPALIVE_REASON = f'Keep Workspace Awake from {APP_NAME} tray'
-KEEPALIVE_APP_ID = os.environ.get('AUGER_CLI_NAME', 'genny')
+KEEPALIVE_APP_ID = runtime_cli_name()
 KEEPALIVE_INHIBIT_FLAGS = 'idle:suspend'
 KEEPALIVE_LOCK = threading.Lock()
 ACTIVE_COPILOT_LOCK = threading.Lock()
@@ -90,6 +87,36 @@ def _find_bin(*names):
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip()
     return ''
+
+
+def _repo_candidates() -> list[Path]:
+    candidates = [REPO_DIR, Path.cwd()]
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for candidate in candidates:
+        candidate = Path(candidate)
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
+
+
+def _behavior_doc_candidates() -> list[Path]:
+    candidates = []
+    for repo in _repo_candidates():
+        candidates.extend([
+            repo / 'auger' / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
+            repo / 'platformgen' / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
+        ])
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
 
 
 BROWSER_BIN = _find_bin('google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium')
@@ -842,7 +869,7 @@ def stream_restart_platform(cmd: dict, write_line):
 def stream_restart_auger(cmd: dict, write_line):
     """Stop and restart the Docker runtime container (full restart).
     The daemon stays running — platformgen-launch.sh is NOT used here because it
-    would try to start a second daemon on port 7437 while this one is live.
+    would try to start a second daemon on the same port while this one is live.
     Uses the personalized image when available and keeps host UID/GID mapping."""
     docker_bin = _find_bin('docker')
     if not docker_bin:
@@ -851,7 +878,11 @@ def stream_restart_auger(cmd: dict, write_line):
 
     import os, time, re as _re
     display = os.environ.get('DISPLAY', ':0')
-    container = os.environ.get('AUGER_CONTAINER_NAME', 'platformgen-platform')
+    container = (
+        os.environ.get('PLATFORMGEN_CONTAINER_NAME')
+        or os.environ.get('AUGER_CONTAINER_NAME')
+        or 'platformgen-platform'
+    )
 
     # Derive safe username (strip domain, replace non-alphanumeric with -)
     _raw_user = os.environ.get('USER', 'auger')
@@ -860,20 +891,37 @@ def stream_restart_auger(cmd: dict, write_line):
     _auger_dir = str(AUGER_DIR)
     _container_home = f'/home/{_safe_user}'
 
-    # Pick personalized image if it exists, else fall back to base image
-    _personalized_image = f'auger-platform-{_safe_user}:latest'
-    _base_image = 'auger-platform:latest'
-    _check = subprocess.run(
-        [docker_bin, 'image', 'inspect', _personalized_image],
-        capture_output=True
+    def _image_exists(name: str) -> bool:
+        return subprocess.run([docker_bin, 'image', 'inspect', name], capture_output=True).returncode == 0
+
+    # Pick personalized image if it exists, else fall back to a local base image.
+    _personalized_image = (
+        os.environ.get('PLATFORMGEN_PERSONALIZED_IMAGE')
+        or f'platformgen-platform-{_safe_user}:latest'
     )
-    if _check.returncode == 0:
+    _legacy_personalized_image = f'auger-platform-{_safe_user}:latest'
+    _base_image = (
+        os.environ.get('PLATFORMGEN_LOCAL_BASE_IMAGE')
+        or os.environ.get('AUGER_LOCAL_BASE_IMAGE')
+        or 'platformgen-platform:latest'
+    )
+    _legacy_base_image = 'auger-platform:latest'
+    if _image_exists(_personalized_image):
         _image = _personalized_image
         _user_arg = f'{os.getuid()}:{os.getgid()}'
+    elif _image_exists(_legacy_personalized_image):
+        write_line({'type': 'progress',
+                    'message': f'  [compat] Using legacy personalized image {_legacy_personalized_image}'})
+        _image = _legacy_personalized_image
+        _user_arg = f'{os.getuid()}:{os.getgid()}'
+    elif _image_exists(_base_image):
+        _image = _base_image
+        _user_arg = 'auger'
+        _container_home = '/home/auger'
     else:
         write_line({'type': 'progress',
-                    'message': f'  [WARN]  Personalized image not found — falling back to {_base_image}'})
-        _image = _base_image
+                    'message': f'  [WARN]  Personalized image not found — falling back to {_legacy_base_image if _image_exists(_legacy_base_image) else _base_image}'})
+        _image = _legacy_base_image if _image_exists(_legacy_base_image) else _base_image
         _user_arg = 'auger'
         _container_home = '/home/auger'
 
@@ -950,7 +998,7 @@ def stream_restart_auger(cmd: dict, write_line):
             '-e', f'HTTP_PROXY={proxy}',
             '-e', f'HTTPS_PROXY={proxy}',
             _image,
-            'auger', 'start',
+            'sh', '-lc', 'python3 -m platformgen start || auger start',
         ]
 
         result = subprocess.run(run_cmd, capture_output=True, text=True)
@@ -1005,11 +1053,8 @@ def _write_session_snapshot(user_prompt: str, response_lines: list) -> None:
     import sqlite3 as _sq3
     snap: dict = {'ts': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
     try:
-        for candidate in [
-            Path('/home/auger/repos/auger-ai-sre-platform'),
-            Path.home() / 'repos' / 'auger-ai-sre-platform',
-        ]:
-            if candidate.exists():
+        for candidate in _repo_candidates():
+            if (candidate / '.git').exists():
                 branch = subprocess.check_output(
                     ['git', '-C', str(candidate), 'branch', '--show-current'],
                     stderr=subprocess.DEVNULL, text=True).strip()
@@ -1063,11 +1108,7 @@ def _write_session_snapshot(user_prompt: str, response_lines: list) -> None:
 
 def _load_behavior_doc() -> str:
     """Return AUGER_BEHAVIOR.md persona doc — searched in package data and repo."""
-    candidates = [
-        Path('/home/auger/repos/auger-ai-sre-platform/auger/data/origin/AUGER_BEHAVIOR.md'),
-        Path.home() / 'repos' / 'auger-ai-sre-platform' / 'auger' / 'data' / 'origin' / 'AUGER_BEHAVIOR.md',
-    ]
-    for p in candidates:
+    for p in _behavior_doc_candidates():
         if p.exists():
             try:
                 return p.read_text().strip()
@@ -1867,20 +1908,28 @@ def handle_open_path(cmd: dict) -> dict:
     # ── Container → host path translation ────────────────────────────────────
     # The container mounts host paths at well-known locations. Translate so
     # host binaries (VS Code, etc.) receive real filesystem paths.
-    host_home = str(Path.home())  # e.g. /home/bobbygblair
-    # Volume mounts: container_prefix → host_prefix
-    CONTAINER_MOUNTS = [
-        ('/host/', '/'),                               # full host root
-        ('/home/auger/repos/', f'{host_home}/repos/'), # ~/repos mount
-        ('/home/auger/.auger/', f'{host_home}/.auger/'),
-        ('/home/auger/.ssh/', f'{host_home}/.ssh/'),
-        ('/home/auger/.kube/', f'{host_home}/.kube/'),
-        ('/home/auger/', f'{host_home}/'),             # catch-all for /home/auger
-    ]
-    for container_prefix, host_prefix in CONTAINER_MOUNTS:
-        if path.startswith(container_prefix):
-            path = host_prefix + path[len(container_prefix):]
-            break
+    host_home = str(Path.home())
+    runtime_state = str(AUGER_DIR)
+    if path.startswith('/host/'):
+        path = path[5:]
+    else:
+        match = re.match(r'^/home/[^/]+/(.*)$', path)
+        if match:
+            remainder = match.group(1)
+            if remainder.startswith('repos/'):
+                path = f'{host_home}/{remainder}'
+            elif remainder.startswith('.ssh/'):
+                path = f'{host_home}/{remainder}'
+            elif remainder.startswith('.kube/'):
+                path = f'{host_home}/{remainder}'
+            elif remainder.startswith('.copilot/'):
+                path = f'{host_home}/{remainder}'
+            elif remainder.startswith('.auger/'):
+                path = runtime_state + path[path.index('/.auger') + len('/.auger'):]
+            elif remainder.startswith(f'{AUGER_DIR.name}/'):
+                path = runtime_state + path[path.index(f'/{AUGER_DIR.name}') + len(f'/{AUGER_DIR.name}'):]
+            else:
+                path = f'{host_home}/{remainder}'
     if path == '/host':
         path = '/'
 
@@ -1916,7 +1965,7 @@ def handle_launch_wizard(cmd: dict) -> dict:
 
     The wizard is a standalone Tk window — it must run on the host (not inside
     the container) so it can reach the host X11 display directly.
-    Called from inside the container via the host daemon on localhost:7437.
+    Called from inside the container via the host daemon on localhost.
     """
     wizard_path = REPO_DIR / 'scripts' / 'install_wizard.py'
     if not wizard_path.exists():
@@ -2451,7 +2500,7 @@ def main():
     _auto_detect()
     server = ThreadedHTTPServer(('0.0.0.0', PORT), DaemonHandler)
     print(f'[OK] Daemon ready at http://localhost:{PORT}')
-    print('   Health check: curl http://localhost:7437/health')
+    print(f'   Health check: curl http://localhost:{PORT}/health')
     try:
         server.serve_forever()
     except KeyboardInterrupt:

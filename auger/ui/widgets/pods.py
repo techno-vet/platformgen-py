@@ -1,5 +1,5 @@
 """
-Pods Widget - Kubernetes Pod Status Monitor for Auger
+Pods Widget - Kubernetes Pod Status Monitor for PlatformGen
 Quick view of pod statuses across clusters and namespaces
 """
 
@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 import threading
 import urllib.parse
 import re
-from auger.ui import icons as _icons
-from auger.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
+from platformgen.ui import icons as _icons
+from platformgen.ui.utils import make_text_copyable, bind_mousewheel, add_listbox_menu, add_treeview_menu
 import requests
 from datetime import datetime, timezone
 
@@ -314,7 +314,7 @@ class PodsWidget(tk.Frame):
         url = self._build_datadog_url(selected_clusters, selected_namespaces, selected_services)
         
         try:
-            from auger.tools.host_cmd import open_url as host_open_url
+            from platformgen.tools.host_cmd import open_url as host_open_url
             host_open_url(url)
             self.status_var.set("✓ Opened DataDog Pods view in browser")
         except Exception as e:
@@ -712,7 +712,7 @@ class PodsWidget(tk.Frame):
             self.table.insert("", tk.END, values=values, tags=tag)
     
     def build_context(self):
-        """Build context for Ask Auger panel"""
+        """Build context for the Ask Genny panel"""
         context = "PODS WIDGET CONTEXT\n\n"
         
         if self.pod_data:

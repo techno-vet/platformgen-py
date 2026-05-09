@@ -6,7 +6,7 @@ Each panel provides a two-pane editor:
   - Right         : form fields for the selected item + Save/Discard buttons
   - Bottom        : status bar
 
-Load order: repo YAML first, then ~/.auger/<type>.yaml overlaid (same id → user wins).
+Load order: repo YAML first, then ~/.platformgen/<type>.yaml overlaid (same id → user wins).
 Saves always go to the user file only.
 """
 import tkinter as tk
@@ -15,7 +15,8 @@ from pathlib import Path
 
 import yaml
 
-from auger.ui.utils import make_text_copyable, add_listbox_menu
+from platformgen.ui.utils import make_text_copyable, add_listbox_menu
+from platformgen.runtime import repo_dir, state_dir
 
 # ── Shared colour constants ───────────────────────────────────────────────────
 BG     = "#1e1e1e"
@@ -139,11 +140,17 @@ class _BasePanel(tk.Frame):
     # ── Paths ─────────────────────────────────────────────────────────────────
 
     def _repo_path(self) -> Path:
-        return (Path(__file__).resolve().parents[3]
-                / "auger" / "data" / "origin" / self._FILE)
+        base = repo_dir() or Path(__file__).resolve().parents[3]
+        for candidate in (
+            base / "platformgen" / "data" / "origin" / self._FILE,
+            base / "auger" / "data" / "origin" / self._FILE,
+        ):
+            if candidate.exists():
+                return candidate
+        return base / "auger" / "data" / "origin" / self._FILE
 
     def _user_path(self) -> Path:
-        return Path.home() / ".auger" / self._FILE
+        return state_dir() / self._FILE
 
     # ── Load / Save ───────────────────────────────────────────────────────────
 
@@ -320,7 +327,7 @@ _ENFORCEMENT_COLORS = {
 _SCOPE_OPTIONS = [
     "global",
     "repo:assist-prod-flux-config",
-    "repo:auger-ai-sre-platform",
+    "repo:platformgen-py",
     "team:SRE",
     "team:Dev",
 ]

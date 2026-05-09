@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 
 from auger.tools.cryptkeeper_lite import encrypt_value, decrypt_value, decrypt_file as decrypt_file_tool
-from auger.ui import icons as _icons
+from platformgen.ui import icons as _icons
 try:
-    from auger.ui.utils import auger_home as _auger_home
+    from platformgen.ui.utils import auger_home as _auger_home
 except ImportError:
     def _auger_home(): return Path.home()
 

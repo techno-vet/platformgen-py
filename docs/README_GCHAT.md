@@ -21,7 +21,7 @@ Post messages to Google Chat spaces using incoming webhooks. No OAuth required �
 |---|---|
 | **Active PR** | Current branch, last commit, and PR link |
 | **Current Task** | The task currently marked  |
-| **Auger Invite** | Invite message with install link for new users |
+| **Platform Invite** | Invite message with install link for new users |
 
 ## Webhook Management (⚙️ Webhooks tab)
 

@@ -2,10 +2,10 @@
 Google Chat Widget — Post messages to Google Chat spaces via webhooks.
 
 Two webhook scopes:
-  PERSONAL — stored in ~/.auger/.env as GCHAT_WEBHOOK_<NAME>
-             Private to each user, never committed to git. Shown with 👤
-  SYSTEM   — stored in auger/data/gchat_webhooks.yaml
-             Shared with all users via git. Shown with 🌐
+  PERSONAL — stored in the runtime .env as GCHAT_WEBHOOK_<NAME>
+              Private to each user, never committed to git. Shown with 👤
+  SYSTEM   — stored in repo gchat_webhooks.yaml
+              Shared with all users via git. Shown with 🌐
 
 Two tabs:
     📨 Send      — compose & send to any webhook
@@ -34,10 +34,13 @@ except ImportError:
     set_key = unset_key = None
 
 try:
-    from auger.ui.utils import make_text_copyable, auger_home as _auger_home
+    from platformgen.ui.utils import make_text_copyable
+    from platformgen.runtime import app_name, repo_dir, state_dir
 except ImportError:
     def make_text_copyable(w): pass
-    def _auger_home(): return Path.home()
+    def app_name(): return "PlatformGen"
+    def repo_dir(): return None
+    def state_dir(): return Path.home() / ".platformgen"
 
 try:
     from PIL import Image as _PILImage, ImageDraw as _PILImageDraw, ImageTk as _PILImageTk
@@ -106,19 +109,20 @@ SUCCESS = '#4ec9b0'
 ERROR   = '#f44747'
 WARN    = '#f0c040'
 
-_ENV_FILE    = _auger_home() / '.auger' / '.env'
+_ENV_FILE    = state_dir() / '.env'
 _KEY_PREFIX  = 'GCHAT_WEBHOOK_'
 _KEY_RE      = re.compile(r'^GCHAT_WEBHOOK_([A-Za-z0-9_]+)$')
 
 # System webhooks YAML (in the repo — shared via git)
 _SYS_YAML    = Path(__file__).resolve().parents[2] / 'data' / 'gchat_webhooks.yaml'
+_SYS_YAML_PG = Path(__file__).resolve().parents[3] / 'platformgen' / 'data' / 'gchat_webhooks.yaml'
 _SYS_YAML_CF = Path(__file__).resolve().parents[3] / 'config' / 'gchat_webhooks.yaml'
 
 
 # ── Storage helpers ───────────────────────────────────────────────────────────
 
 def _load_personal() -> dict:
-    """Return {name: url} from ~/.auger/.env."""
+    """Return {name: url} from the runtime .env."""
     if not _ENV_FILE.exists():
         return {}
     try:
@@ -147,8 +151,7 @@ def _save_personal(name: str, url: str):
             raise PermissionError(
                 f"Cannot write to {_ENV_FILE}\n\n"
                 "The container is running as a different user than the .env owner.\n"
-                "Fix: relaunch Auger from terminal:\n"
-                "  docker rm -f auger-platform && bash ~/repos/auger-ai-sre-platform/scripts/auger-launch.sh"
+                f"Fix: relaunch {app_name()} from terminal with the current repo launcher."
             )
 
 
@@ -160,31 +163,38 @@ def _delete_personal(name: str):
             pass
 
 
+def _system_yaml_candidates(repo: Path | None = None) -> list[Path]:
+    candidates: list[Path] = []
+    if repo is not None:
+        candidates.extend([
+            repo / 'auger' / 'data' / 'gchat_webhooks.yaml',
+            repo / 'platformgen' / 'data' / 'gchat_webhooks.yaml',
+            repo / 'config' / 'gchat_webhooks.yaml',
+        ])
+    candidates.extend([_SYS_YAML, _SYS_YAML_PG, _SYS_YAML_CF])
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
+
+
 def _sys_yaml_path() -> Path:
     repo = _find_git_root()
-    if repo is not None:
-        repo_data = repo / 'auger' / 'data' / 'gchat_webhooks.yaml'
-        repo_cfg = repo / 'config' / 'gchat_webhooks.yaml'
-        if repo_data.exists():
-            return repo_data
-        if repo_cfg.exists():
-            return repo_cfg
-    return _SYS_YAML if _SYS_YAML.exists() else _SYS_YAML_CF
+    for candidate in _system_yaml_candidates(repo):
+        if candidate.exists():
+            return candidate
+    return _system_yaml_candidates(repo)[0]
 
 
 def _paired_sys_yaml_path(selected: Path) -> Path | None:
     repo = _find_git_root()
-    if repo is not None:
-        repo_data = repo / 'auger' / 'data' / 'gchat_webhooks.yaml'
-        repo_cfg = repo / 'config' / 'gchat_webhooks.yaml'
-        if selected == repo_data and repo_cfg.exists():
-            return repo_cfg
-        if selected == repo_cfg and repo_data.exists():
-            return repo_data
-    if selected == _SYS_YAML and _SYS_YAML_CF.exists():
-        return _SYS_YAML_CF
-    if selected == _SYS_YAML_CF and _SYS_YAML.exists():
-        return _SYS_YAML
+    candidates = [p for p in _system_yaml_candidates(repo) if p != selected and p.exists()]
+    if candidates:
+        return candidates[0]
     return None
 
 
@@ -253,17 +263,60 @@ def _delete_system(name: str):
 
 
 def _find_git_root() -> Path | None:
-    """Walk up from __file__ looking for a .git dir; also check ~/repos path."""
+    """Find the active git repo for this PlatformGen runtime."""
+    configured = repo_dir()
+    if configured and (configured / '.git').is_dir():
+        return configured
     # Walk up from the widget file
     p = Path(__file__).resolve()
     for parent in p.parents:
         if (parent / '.git').is_dir():
             return parent
-    # Fallback: well-known repo location
-    candidate = _auger_home() / 'repos' / 'auger-ai-sre-platform'
-    if (candidate / '.git').is_dir():
-        return candidate
+    # Fallback: current working directory if it is a repo
+    cwd = Path.cwd()
+    if (cwd / '.git').is_dir():
+        return cwd
     return None
+
+
+def _remote_url(repo: Path) -> str:
+    try:
+        r = subprocess.run(['git', '-C', str(repo), 'remote', 'get-url', 'origin'],
+                           capture_output=True, text=True, timeout=5)
+        return r.stdout.strip()
+    except Exception:
+        return ''
+
+
+def _remote_repo_path(remote_url: str) -> str:
+    m = re.match(r"git@[^:]+:(.+)", remote_url)
+    if m:
+        return re.sub(r'\.git$', '', m.group(1))
+    m = re.match(r"https?://[^/]+/(.+)", remote_url)
+    if m:
+        return re.sub(r'\.git$', '', m.group(1))
+    return ''
+
+
+def _remote_base_url(remote_url: str) -> str:
+    m = re.match(r"git@([^:]+):(.+)", remote_url)
+    if m:
+        return f"https://{m.group(1)}/{re.sub(r'\\.git$', '', m.group(2))}"
+    m = re.match(r"(https?://[^/]+/.+)", remote_url)
+    if m:
+        return re.sub(r'\.git$', '', m.group(1))
+    return ''
+
+
+def _system_git_relpaths(repo: Path) -> list[str]:
+    rels = []
+    for candidate in _system_yaml_candidates(repo):
+        try:
+            if candidate.exists():
+                rels.append(str(candidate.relative_to(repo)))
+        except ValueError:
+            continue
+    return rels
 
 
 def _get_current_branch(repo: Path) -> str:
@@ -286,21 +339,24 @@ def _git_commit_push(repo: Path, branch: str, callback) -> None:
         try:
             import base64 as _b64, os
             from dotenv import dotenv_values
-            env      = dotenv_values(str(_auger_home() / '.auger' / '.env'))
+            env      = dotenv_values(str(_ENV_FILE))
             ghe_url   = env.get('GHE_URL', 'https://github.helix.gsa.gov')
             ghe_token = env.get('GHE_TOKEN', '')
             if not ghe_token:
-                callback(False, '❌ GHE_TOKEN not set in ~/.auger/.env')
+                callback(False, f'❌ GHE_TOKEN not set in {_ENV_FILE}')
                 return
 
             headers = {'Authorization': f'token {ghe_token}',
                        'Content-Type': 'application/json'}
-            api = f'{ghe_url}/api/v3/repos/assist/auger-ai-sre-platform'
+            remote_path = _remote_repo_path(_remote_url(repo))
+            if not remote_path:
+                callback(False, '❌ Could not determine origin repo path')
+                return
+            api = f'{ghe_url.rstrip("/")}/api/v3/repos/{remote_path}'
 
-            # Files to commit — data yaml (canonical) + config yaml (symlink target)
+            # Files to commit — repo yaml plus any mirrored config/data target
             files_to_commit = []
-            for rel_path in ('auger/data/gchat_webhooks.yaml',
-                             'config/gchat_webhooks.yaml'):
+            for rel_path in _system_git_relpaths(repo):
                 local = repo / rel_path
                 if not local.exists():
                     continue
@@ -346,9 +402,9 @@ def _git_commit_push(repo: Path, branch: str, callback) -> None:
                                   'message': 'chore(gchat): update system webhooks\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>',
                                   'tree': new_tree,
                                   'parents': [head_sha],
-                                  'author': {'name': env.get('GHE_USERNAME', 'auger'),
-                                             'email': f'{env.get("GHE_USERNAME","auger")}@users.noreply.github.com'},
-                              }, verify=False, timeout=20)
+                                  'author': {'name': env.get('GHE_USERNAME', 'platformgen'),
+                                             'email': f'{env.get("GHE_USERNAME","platformgen")}@users.noreply.github.com'},
+                               }, verify=False, timeout=20)
             commit_sha = r.json()['sha']
 
             # Update branch ref
@@ -366,7 +422,7 @@ def _git_commit_push(repo: Path, branch: str, callback) -> None:
 
 
 def _get_sender_name() -> str:
-    """Return the display name for the current user from GHE_USERNAME in ~/.auger/.env."""
+    """Return the display name for the current user from GHE_USERNAME in the runtime .env."""
     import os
     # Check environment first (already loaded by the shell / container)
     username = os.environ.get('GHE_USERNAME', '').strip()
@@ -531,7 +587,7 @@ class GChatWidget(tk.Frame):
                  fg=FG3, bg=BG).pack(side=tk.LEFT, padx=(0, 6))
         for lbl, fn in [('Active PR', self._fill_pr),
                          ('Current Task', self._fill_task),
-                         ('Auger Invite', self._fill_invite)]:
+                         ('Platform Invite', self._fill_invite)]:
             b = tk.Label(qr, text=lbl, font=('Segoe UI', 8), fg=ACCENT,
                          bg=BG4, cursor='hand2', padx=6, pady=2)
             b.pack(side=tk.LEFT, padx=2)
@@ -573,7 +629,7 @@ class GChatWidget(tk.Frame):
         self._scope_var = tk.StringVar(value='personal')
         scope_frame = tk.Frame(fields, bg=BG2)
         scope_frame.grid(row=0, column=1, sticky='w', pady=2)
-        for val, lbl, tip in [('personal', '👤 Personal', 'Saved to ~/.auger/.env — private to you'),
+        for val, lbl, tip in [('personal', '👤 Personal', f'Saved to {_ENV_FILE} — private to you'),
                                ('system',   '🌐 System',   'Saved to repo YAML — shared with all users via git')]:
             rb = tk.Radiobutton(scope_frame, text=lbl, variable=self._scope_var,
                                 value=val, font=('Segoe UI', 9),
@@ -581,7 +637,7 @@ class GChatWidget(tk.Frame):
                                 activeforeground=FG, cursor='hand2',
                                 command=self._on_scope_change)
             rb.pack(side=tk.LEFT, padx=(0, 16))
-        self._scope_tip = tk.Label(fields, text='Saved to ~/.auger/.env — private to you',
+        self._scope_tip = tk.Label(fields, text=f'Saved to {_ENV_FILE} — private to you',
                                     font=('Segoe UI', 8), fg=FG3, bg=BG2)
         self._scope_tip.grid(row=0, column=2, padx=6, sticky='w')
 
@@ -873,7 +929,7 @@ class GChatWidget(tk.Frame):
             self._scope_tip.config(text='Saved to repo YAML — shared with all users via git')
         else:
             self._fdesc_row.grid_remove()
-            self._scope_tip.config(text='Saved to ~/.auger/.env — private to you')
+            self._scope_tip.config(text=f'Saved to {_ENV_FILE} — private to you')
 
     # ── List ───────────────────────────────────────────────────────────────────
 
@@ -891,13 +947,13 @@ class GChatWidget(tk.Frame):
 
         # Personal section
         if self._personal:
-            self._section_header('👤 Personal  (stored in ~/.auger/.env)')
+            self._section_header(f'👤 Personal  (stored in {_ENV_FILE})')
             for name in sorted(self._personal):
                 self._list_row(name, self._personal[name], 'personal', '#2a3a2a')
 
         # System section
         if self._system:
-            self._section_header('🌐 System  (shared via git · auger/data/gchat_webhooks.yaml)')
+            self._section_header(f'🌐 System  (shared via git · {_sys_yaml_path().name})')
             for name in sorted(self._system):
                 info = self._system[name]
                 url  = info['url'] if isinstance(info, dict) else info
@@ -1008,7 +1064,7 @@ class GChatWidget(tk.Frame):
             self._form_err.config(text='URL must start with https://chat.googleapis.com/...', fg=ERROR); return
         self._form_err.config(text='Sending test...', fg=FG2)
         def _do():
-            ok, msg = _post_message(url, 'Auger webhook test: ' + name)
+            ok, msg = _post_message(url, f'{app_name()} webhook test: ' + name)
             self.after(0, lambda: self._form_err.config(
                 text=('✅ ' if ok else '❌ ') + msg, fg=SUCCESS if ok else ERROR))
         threading.Thread(target=_do, daemon=True).start()
@@ -1032,9 +1088,10 @@ class GChatWidget(tk.Frame):
         """If on a feature branch: commit + push system webhooks YAML automatically.
         Otherwise: show a manual reminder."""
         repo   = _find_git_root()
+        rels = ', '.join(_system_git_relpaths(repo)) if repo else _sys_yaml_path().name
         if repo is None:
             self._git_note.config(
-                text='  [!] Could not find git repo. Run: git add auger/data/gchat_webhooks.yaml && git commit',
+                text=f'  [!] Could not find git repo. Run: git add {rels} && git commit',
                 fg=WARN)
             self._git_note.pack(anchor='w', padx=8, pady=(2, 4))
             return
@@ -1049,12 +1106,12 @@ class GChatWidget(tk.Frame):
         elif branch:
             self._git_note.config(
                 text=f'  [i] On branch "{branch}" (not a feature branch). '
-                     f'Run: git add auger/data/gchat_webhooks.yaml && git commit && git push',
+                     f'Run: git add {rels} && git commit && git push',
                 fg=WARN)
             self._git_note.pack(anchor='w', padx=8, pady=(2, 4))
         else:
             self._git_note.config(
-                text='  [i] Could not detect branch. Run: git add auger/data/gchat_webhooks.yaml && git commit',
+                text=f'  [i] Could not detect branch. Run: git add {rels} && git commit',
                 fg=WARN)
             self._git_note.pack(anchor='w', padx=8, pady=(2, 4))
 
@@ -1085,7 +1142,7 @@ class GChatWidget(tk.Frame):
     def _test(self, name: str, url: str):
         self._set_status(f'Testing {name}…', FG2)
         def _do():
-            ok, msg = _post_message(url, 'Auger webhook test: ' + name)
+            ok, msg = _post_message(url, f'{app_name()} webhook test: ' + name)
             self.after(0, lambda: self._set_status(
                 ('✅ ' if ok else '❌ ') + name + ': ' + msg, SUCCESS if ok else ERROR))
         threading.Thread(target=_do, daemon=True).start()
@@ -1114,14 +1171,17 @@ class GChatWidget(tk.Frame):
 
     def _fill_pr(self):
         try:
-            import subprocess
-            repo   = str(_auger_home() / 'repos' / 'auger-ai-sre-platform')
-            branch = subprocess.run(['git','-C',repo,'branch','--show-current'],
+            repo = _find_git_root()
+            if repo is None:
+                raise RuntimeError('repo not found')
+            branch = subprocess.run(['git','-C',str(repo),'branch','--show-current'],
                                     capture_output=True,text=True,timeout=5).stdout.strip()
-            commit = subprocess.run(['git','-C',repo,'log','--oneline','-1'],
+            commit = subprocess.run(['git','-C',str(repo),'log','--oneline','-1'],
                                     capture_output=True,text=True,timeout=5).stdout.strip()
+            compare_base = _remote_base_url(_remote_url(repo))
+            compare_url = f'{compare_base}/compare/{branch}' if compare_base and branch else ''
             text = (f'PR Review Request\nBranch: {branch}\nLast commit: {commit}\n'
-                    f'https://github.helix.gsa.gov/assist/auger-ai-sre-platform/compare/{branch}\n'
+                    f'{compare_url}\n'
                     f'Please review and approve')
         except Exception:
             text = 'PR Review Request\nBranch: \nPlease review and approve'
@@ -1130,7 +1190,7 @@ class GChatWidget(tk.Frame):
     def _fill_task(self):
         try:
             import sqlite3
-            from auger.runtime import state_dir
+            from platformgen.runtime import state_dir
 
             conn = sqlite3.connect(str(state_dir() / 'tasks.db'))
             row  = conn.execute("SELECT id,title,status FROM tasks WHERE status='in_progress' "
@@ -1143,9 +1203,11 @@ class GChatWidget(tk.Frame):
         self._set_text(text)
 
     def _fill_invite(self):
-        self._set_text('Auger SRE Platform - Alpha\n'
-                       'Get started: https://github.helix.gsa.gov/assist/auger-ai-sre-platform\n'
-                       'Run bash auger-launch.sh to install.\nQuestions? Ask in this space')
+        repo = _find_git_root()
+        remote = _remote_base_url(_remote_url(repo)) if repo else ''
+        self._set_text(f'{app_name()} - Alpha\n'
+                       f'Get started: {remote or "Open the current PlatformGen repo"}\n'
+                       'Launch from the repo with the PlatformGen launcher.\nQuestions? Ask in this space')
 
     def _set_text(self, text: str):
         self._msg.delete('1.0', 'end')

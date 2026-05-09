@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install standalone GitHub Copilot CLI
-# This is required for Ask Auger to function
+# This is required for Ask Genny to function
 
 set -e
 
