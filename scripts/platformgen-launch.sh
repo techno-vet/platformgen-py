@@ -80,7 +80,7 @@ docker_usable() {
 
 install_desktop_launchers() {
     local icon_dir desktop_dir autostart_dir icon_path default_icon_path
-    local host_desktop_file sre_desktop_file autostart_file
+    local host_desktop_file sre_desktop_file autostart_file host_exec
 
     icon_dir="$HOME/.local/share/icons"
     desktop_dir="$HOME/.local/share/applications"
@@ -90,6 +90,11 @@ install_desktop_launchers() {
     host_desktop_file="$desktop_dir/${DESKTOP_SLUG}.desktop"
     sre_desktop_file="$desktop_dir/${DESKTOP_SLUG}-platform.desktop"
     autostart_file="$autostart_dir/${DESKTOP_SLUG}-task-tray.desktop"
+    host_exec="$HOME/.platformgen/bin/platformgen-open.py"
+    [ -x "$AUGER_DIR/bin/platformgen-open.py" ] && host_exec="$AUGER_DIR/bin/platformgen-open.py"
+    if [ ! -x "$host_exec" ]; then
+        host_exec="bash ${LAUNCHER_SCRIPT} --venv --background"
+    fi
 
     mkdir -p "$icon_dir" "$desktop_dir" "$autostart_dir"
     rm -f "$autostart_dir/${DESKTOP_SLUG}-platform.desktop"
@@ -118,7 +123,7 @@ Type=Application
 Name=${APP_TITLE}
 GenericName=Host Platform
 Comment=Launch ${APP_TITLE} on this host without Docker
-Exec=bash ${LAUNCHER_SCRIPT} --venv --background
+Exec=${host_exec}
 Icon=${icon_path}
 Terminal=false
 Categories=Development;System;
@@ -126,7 +131,7 @@ StartupWMClass=${WM_CLASS}
 Keywords=${DESKTOP_SLUG};host;venv;widgets;
 DESKTOP
 
-    if docker_usable; then
+    if docker_usable && [ "${PLATFORMGEN_ENABLE_SRE_LAUNCHER:-${AUGER_ENABLE_SRE_LAUNCHER:-0}}" = "1" ]; then
         cat > "$sre_desktop_file" <<DESKTOP
 [Desktop Entry]
 Version=1.0
@@ -149,7 +154,8 @@ DESKTOP
     chmod +x "$host_desktop_file"
     update-desktop-database "$desktop_dir" 2>/dev/null || true
 
-    cat > "$autostart_file" <<AUTOSTART
+    if [ "${PLATFORMGEN_ENABLE_TRAY_AUTOSTART:-${AUGER_ENABLE_TRAY_AUTOSTART:-0}}" = "1" ]; then
+        cat > "$autostart_file" <<AUTOSTART
 [Desktop Entry]
 Type=Application
 Name=${AUGER_TASK_TRAY_TITLE:-PlatformGen Task Tray}
@@ -160,6 +166,9 @@ Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 AUTOSTART
+    else
+        rm -f "$autostart_file"
+    fi
 }
 
 install_cli_wrappers() {
@@ -251,7 +260,7 @@ if [ "$DOCKER_MODE" -eq 1 ] && ! docker_usable; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# VENV MODE  (no Docker required — works on Windows, macOS, Linux)
+# VENV MODE  (Linux shell compatibility path; canonical cross-platform install is scripts/platformgen-installer.py)
 # ─────────────────────────────────────────────────────────────────────────────
 if [ "$VENV_MODE" -eq 1 ]; then
     echo "[PY]  PlatformGen native venv mode"
@@ -382,7 +391,9 @@ PY
     export AUGER_MODE=venv
     DISPLAY_VAL="$(detect_display)"
     install_desktop_launchers
-    DISPLAY="$DISPLAY_VAL" bash "$TRAY_START_SCRIPT" >/dev/null 2>&1 || true
+    if [ "${PLATFORMGEN_ENABLE_TRAY_AUTOSTART:-${AUGER_ENABLE_TRAY_AUTOSTART:-0}}" = "1" ]; then
+        DISPLAY="$DISPLAY_VAL" bash "$TRAY_START_SCRIPT" >/dev/null 2>&1 || true
+    fi
 
     if [ "$BACKGROUND_MODE" -eq 1 ]; then
         if [ -f "$VENV_PID_FILE" ]; then
@@ -871,12 +882,16 @@ fi
 
 install_desktop_launchers
 progress_msg "GNOME launchers installed."
-progress_msg "Tray autostart registered."
+if [ "${PLATFORMGEN_ENABLE_TRAY_AUTOSTART:-${AUGER_ENABLE_TRAY_AUTOSTART:-0}}" = "1" ]; then
+    progress_msg "Tray autostart registered."
+fi
 progress_msg "PlatformGen startup complete."
 progress_done
 
 # ── 14. Start System Tray Applet ─────────────────────────────────────────────
-DISPLAY="${DISPLAY_VAL}" bash "$SCRIPT_DIR/start-platformgen-tray.sh"
+if [ "${PLATFORMGEN_ENABLE_TRAY_AUTOSTART:-${AUGER_ENABLE_TRAY_AUTOSTART:-0}}" = "1" ]; then
+    DISPLAY="${DISPLAY_VAL}" bash "$SCRIPT_DIR/start-platformgen-tray.sh"
+fi
 
 echo ""
 echo "[OK]  PlatformGen is running!"

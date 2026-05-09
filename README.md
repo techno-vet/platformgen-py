@@ -32,22 +32,23 @@ Auger Platform is a comprehensive tool for SREs, developers, BAs, and POs that p
 ### Prerequisites
 - Python 3.10 or higher
 - Git
-- X11 display (Linux) or XQuartz (macOS)
+- Linux or Windows host environment
 
 ### Installation
 
 ```bash
-# 1. Get the repo into ~/repos/auger-ai-sre-platform
-#    (SSH, HTTPS, or VS Code source control are all fine)
-git clone https://github.helix.gsa.gov/assist/auger-ai-sre-platform.git ~/repos/auger-ai-sre-platform
-
-# 2. Run the install wizard — one entry point for everyone
-cd ~/repos/auger-ai-sre-platform && ./scripts/install_wizard
+git clone https://github.com/techno-vet/platformgen-py.git
+cd platformgen-py
+python3 scripts/platformgen-installer.py
 ```
 
-Optional before onboarding: `cp .env.example ~/.auger/.env` and pre-fill any keys you already have.
+Optional desktop UI wrapper:
 
-The wizard handles token detection and prompts for missing `GH_TOKEN`, `GHE_TOKEN`, and Artifactory credentials early, installs the host `auger` CLI for terminal Ask Auger, pulls Docker images, and sets up the GNOME launcher. After first install, launch Auger from your app grid. On workspace login, Auger auto-starts the task tray so users can launch the platform from the tray or from the app grid.
+```bash
+python3 scripts/install_wizard.py
+```
+
+The Python-first installer bootstraps a host venv, seeds `~/.platformgen`, imports compatible credentials when available, installs the repo in editable mode, creates the PlatformGen launcher/icon, and launches the host runtime. Linux and Windows are first-class targets; macOS support is planned through the same installer core.
 
 ---
 

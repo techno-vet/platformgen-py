@@ -1961,11 +1961,10 @@ def handle_open_path(cmd: dict) -> dict:
 
 
 def handle_launch_wizard(cmd: dict) -> dict:
-    """Launch the PlatformGen install wizard (install_wizard.py) on the host desktop.
+    """Launch the PlatformGen installer UI on the host desktop.
 
-    The wizard is a standalone Tk window — it must run on the host (not inside
-    the container) so it can reach the host X11 display directly.
-    Called from inside the container via the host daemon on localhost.
+    The compatibility filename remains install_wizard.py, but it now fronts the
+    Python-first installer core and must run on the host desktop.
     """
     wizard_path = REPO_DIR / 'scripts' / 'install_wizard.py'
     if not wizard_path.exists():

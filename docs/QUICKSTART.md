@@ -36,7 +36,7 @@ You can leave values blank and only fill in the keys you already have before onb
 ## Step 2 — Run the install wizard
 
 ```bash
-./scripts/install_wizard
+python3 scripts/platformgen-installer.py
 ```
 
 The wizard will:
