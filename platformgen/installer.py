@@ -29,7 +29,7 @@ DEFAULT_DAEMON_PORT = int(os.environ.get("PLATFORMGEN_DAEMON_PORT") or os.enviro
 ENV_TEMPLATE_NAME = ".env.example"
 INSTALL_METADATA = "install-metadata.json"
 COPILOT_INSTALL_URL = "https://gh.io/copilot-install"
-GHE_DEFAULT_URL = "https://github.helix.gsa.gov"
+GHE_DEFAULT_URL = ""  # No default; prompt only if user requests enterprise GitHub
 
 ASTUTL_CANDIDATES = [
     Path.home() / ".astutl" / "astutl_secure_config.env",
@@ -313,7 +313,7 @@ def _ghe_token_valid(token: str, ghe_api_user: str) -> bool:
 def _detect_ghe_context(env_file: Path) -> tuple[str, str, str]:
     ghe_url = _read_env_key(env_file, "GHE_URL") or GHE_DEFAULT_URL
     parsed = urllib.parse.urlparse(ghe_url.rstrip("/"))
-    host = parsed.netloc or parsed.path.split("/")[0] or "github.helix.gsa.gov"
+    host = parsed.netloc or parsed.path.split("/")[0] or "github.com"
     api_user = "https://api.github.com/user" if host == "github.com" else f"{ghe_url.rstrip('/')}/api/v3/user"
     return host, ghe_url.rstrip("/"), api_user
 
@@ -843,7 +843,8 @@ def _write_detected_tokens(state_dir: Path, ui: InstallUI, interactive: bool) ->
             ui.log(f"[WARN] Saved {host} token candidate was rejected")
             ghe_token = ""
 
-    if not ghe_token and interactive:
+    # Skip GHE token prompt for now (PlatformGen default)
+    if False and not ghe_token and interactive:
         ghe_token = ui.ask_text(
             f"{host} token for the GitHub widget (blank to skip)",
             default="",
