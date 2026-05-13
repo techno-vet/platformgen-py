@@ -743,7 +743,7 @@ def start(port, display, debug, config_dir):
     if display:
         os.environ['DISPLAY'] = display
     elif 'DISPLAY' not in os.environ:
-        click.echo("⚠️  Warning: DISPLAY not set. Using :1")
+        click.echo("[WARN] DISPLAY not set. Using :1")
         os.environ['DISPLAY'] = ':1'
     
     # Check if initialized
@@ -754,7 +754,7 @@ def start(port, display, debug, config_dir):
     
     config_file = config_dir / 'config.yaml'
     if not config_file.exists():
-        click.echo(f"❌ {app_name()} not initialized!")
+        click.echo(f"[ERROR] {app_name()} not initialized!")
         click.echo(f"Run: {cli_name()} init")
         sys.exit(1)
     
@@ -799,7 +799,7 @@ def config(config_dir):
     
     config_file = config_dir / 'config.yaml'
     if not config_file.exists():
-        click.echo(f"❌ {app_name()} not initialized!")
+        click.echo(f"[ERROR] {app_name()} not initialized!")
         click.echo(f"Run: {cli_name()} init")
         sys.exit(1)
     
