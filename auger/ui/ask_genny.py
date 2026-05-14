@@ -128,12 +128,14 @@ class AskGennyPanel(tk.Frame):
             os.path.join(os.environ.get("AUGER_VENV_BIN", ""), cli) if os.environ.get("AUGER_VENV_BIN") else None,
             str(Path(sys.executable).resolve().parent / cli),
             str(state_dir() / "venv" / "bin" / cli),
+            str(state_dir() / "bin" / cli),  # PlatformGen installer location
             str(Path.home() / f".local/bin/{cli}"),
         ]
         for candidate in candidates:
             if candidate and Path(candidate).exists():
                 return str(Path(candidate))
-        return str(Path.home() / f".local/bin/{cli}")
+        # Default to PlatformGen bin dir
+        return str(state_dir() / "bin" / cli)
 
     def _load_header_brand_image(self):
         asset_path = Path(__file__).resolve().parent / "assets" / "ask_genny_header.png"
