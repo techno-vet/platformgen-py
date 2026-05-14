@@ -47,14 +47,25 @@ def _activation_socket_path() -> Path:
 def _signal_existing_instance() -> bool:
     """Ask an already-running PlatformGen window to raise itself, if present."""
     socket_path = _activation_socket_path()
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.settimeout(0.5)
-            client.connect(os.fspath(socket_path))
-            client.sendall(b"activate\n")
-        return True
-    except OSError:
-        return False
+    if sys.platform == "win32":
+        # Use TCP loopback for Windows
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+                client.settimeout(0.5)
+                client.connect(("127.0.0.1", 7439))
+                client.sendall(b"activate\n")
+            return True
+        except OSError:
+            return False
+    else:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(0.5)
+                client.connect(os.fspath(socket_path))
+                client.sendall(b"activate\n")
+            return True
+        except OSError:
+            return False
 
 
 class PlatformGenApp(tk.Tk):
@@ -857,12 +868,38 @@ class PlatformGenApp(tk.Tk):
 
     def _start_activation_listener(self):
         """Listen for "activate" signals so launcher clicks reuse this window."""
+        if sys.platform == "win32":
+            # Use TCP loopback for Windows
+            import socketserver
+            class ActivationTCPHandler(socketserver.BaseRequestHandler):
+                def handle(self):
+                    try:
+                        self.request.recv(1024)
+                    except OSError:
+                        pass
+                    try:
+                        self.request.sendall(b"ok")
+                    except OSError:
+                        pass
+                    self.server.app.after(0, self.server.app._activate_window)
+            class ActivationTCPServer(socketserver.TCPServer):
+                allow_reuse_address = True
+                def __init__(self, server_address, RequestHandlerClass, app):
+                    super().__init__(server_address, RequestHandlerClass)
+                    self.app = app
+            def serve_tcp():
+                with ActivationTCPServer(("127.0.0.1", 7439), ActivationTCPHandler, self) as server:
+                    self._activation_server = server
+                    while not self._activation_stop.is_set():
+                        server.handle_request()
+            threading.Thread(target=serve_tcp, daemon=True).start()
+            return
+        # Unix: use AF_UNIX socket
         self._activation_socket_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._activation_socket_path.unlink()
         except FileNotFoundError:
             pass
-
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             server.bind(os.fspath(self._activation_socket_path))
@@ -871,9 +908,7 @@ class PlatformGenApp(tk.Tk):
         except OSError:
             server.close()
             return
-
         self._activation_server = server
-
         def _serve():
             while not self._activation_stop.is_set():
                 try:
@@ -892,7 +927,6 @@ class PlatformGenApp(tk.Tk):
                     except OSError:
                         pass
                 self.after(0, self._activate_window)
-
         threading.Thread(target=_serve, daemon=True).start()
 
     def _activate_window(self):
@@ -910,22 +944,29 @@ class PlatformGenApp(tk.Tk):
     def _stop_activation_listener(self):
         self._activation_stop.set()
         if self._activation_server is not None:
+            if sys.platform == "win32":
+                try:
+                    self._activation_server.server_close()
+                except Exception:
+                    pass
+                self._activation_server = None
+            else:
+                try:
+                    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                        client.settimeout(0.2)
+                        client.connect(os.fspath(self._activation_socket_path))
+                        client.sendall(b"shutdown\n")
+                except OSError:
+                    pass
+                try:
+                    self._activation_server.close()
+                except OSError:
+                    pass
+                self._activation_server = None
             try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-                    client.settimeout(0.2)
-                    client.connect(os.fspath(self._activation_socket_path))
-                    client.sendall(b"shutdown\n")
-            except OSError:
+                self._activation_socket_path.unlink()
+            except FileNotFoundError:
                 pass
-            try:
-                self._activation_server.close()
-            except OSError:
-                pass
-            self._activation_server = None
-        try:
-            self._activation_socket_path.unlink()
-        except FileNotFoundError:
-            pass
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
