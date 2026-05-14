@@ -901,6 +901,25 @@ def run_install(options: InstallOptions, ui: InstallUI) -> dict[str, object]:
     else:
         ui.log(f"[WARN] No GH_TOKEN configured yet. Ask {ASSISTANT_NAME} will stay limited until it is added.")
 
+    # --- Install Ask Genny CLI and tzdata on Windows ---
+    if os.name == "nt":
+        # Install tzdata if not present
+        try:
+            import zoneinfo
+        except ImportError:
+            ui.log("[PKG] Installing tzdata for time zone support (Windows)")
+            subprocess.run([str(_venv_python(options.state_dir)), "-m", "pip", "install", "tzdata"], check=False)
+        # Install Ask Genny CLI
+        ask_genny_src = options.repo_dir / "scripts" / "ask-genny"
+        ask_genny_dst = options.state_dir / "bin" / "genny"
+        ask_genny_dst.parent.mkdir(parents=True, exist_ok=True)
+        if ask_genny_src.exists():
+            shutil.copy2(ask_genny_src, ask_genny_dst)
+            os.chmod(ask_genny_dst, 0o755)
+            ui.log(f"[OK] Installed Ask Genny CLI to {ask_genny_dst}")
+        else:
+            ui.log(f"[WARN] Ask Genny CLI script not found at {ask_genny_src}")
+
     launcher_paths = install_launchers(options, ui)
     report = {
         "state_dir": str(options.state_dir),
