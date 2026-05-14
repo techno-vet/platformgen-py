@@ -519,10 +519,11 @@ def _install_copilot_cli(options: InstallOptions, ui: InstallUI) -> None:
         ui.log(f"[WARN] GitHub Copilot CLI not found. Install it later so Ask {ASSISTANT_NAME} works.")
         return
 
-    should_install = options.install_copilot == "always" or ui.confirm(
+    # Auto-confirm Copilot CLI install for non-interactive/CI
+    should_install = options.install_copilot in ("always", "auto") or (hasattr(ui, 'interactive') and ui.interactive and ui.confirm(
         f"Install the GitHub Copilot CLI for Ask {ASSISTANT_NAME}?",
         default=True,
-    )
+    ))
     if not should_install:
         ui.log(f"[WARN] Skipping Copilot CLI install. Ask {ASSISTANT_NAME} will stay limited until it is installed.")
         return

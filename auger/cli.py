@@ -758,12 +758,12 @@ def start(port, display, debug, config_dir):
         click.echo(f"Run: {cli_name()} init")
         sys.exit(1)
     
-    click.echo(f"🚀 Starting {product_name()}...")
-    click.echo(f"📁 Config: {config_dir}")
-    click.echo(f"🖥️  Display: {os.environ.get('DISPLAY')}")
+    click.echo(f"[INFO] Starting {product_name()}...")
+    click.echo(f"[INFO] Config: {config_dir}")
+    click.echo(f"[INFO] Display: {os.environ.get('DISPLAY')}")
     
     if debug:
-        click.echo("🐛 Debug mode enabled")
+        click.echo("[DEBUG] Debug mode enabled")
         os.environ['AUGER_DEBUG'] = '1'
     
     # Import and run app
