@@ -76,6 +76,12 @@ class AskGennyPanel(tk.Frame):
         self._last_prompt = ''  # original user prompt, stored for post-response footer
         
         self._auger = self._resolve_cli_path()
+        # On Windows, always use the .cmd wrapper for genny
+        if os.name == "nt" and not self._auger.lower().endswith('.cmd'):
+            bin_dir = str(state_dir() / "bin")
+            genny_cmd = os.path.join(bin_dir, "genny.cmd")
+            if os.path.exists(genny_cmd):
+                self._auger = genny_cmd
         
         # History persistence
         self._history_dir = state_dir() / "logs" / "chat_history"
