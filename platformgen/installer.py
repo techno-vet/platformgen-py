@@ -917,6 +917,24 @@ def run_install(options: InstallOptions, ui: InstallUI) -> dict[str, object]:
             shutil.copy2(ask_genny_src, ask_genny_dst)
             os.chmod(ask_genny_dst, 0o755)
             ui.log(f"[OK] Installed Ask Genny CLI to {ask_genny_dst}")
+            # Add to user PATH if not present
+            user_path = os.environ.get("PATH", "")
+            bin_dir = str(ask_genny_dst.parent)
+            if bin_dir.lower() not in [p.lower() for p in user_path.split(os.pathsep)]:
+                # Add to user PATH via registry (Windows)
+                import winreg
+                try:
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_ALL_ACCESS) as key:
+                        try:
+                            current_path, _ = winreg.QueryValueEx(key, "PATH")
+                        except FileNotFoundError:
+                            current_path = ""
+                        if bin_dir not in current_path.split(os.pathsep):
+                            new_path = current_path + (os.pathsep if current_path else "") + bin_dir
+                            winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
+                            ui.log(f"[OK] Added {bin_dir} to user PATH (restart required)")
+                except Exception as e:
+                    ui.log(f"[WARN] Could not update user PATH: {e}")
         else:
             ui.log(f"[WARN] Ask Genny CLI script not found at {ask_genny_src}")
 
