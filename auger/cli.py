@@ -595,7 +595,7 @@ def run_copilot_ask(prompt_text=None):
         try:
             show_gui()
         except Exception as e:
-            click.echo(f"❌ Error showing GUI: {e}")
+            click.echo(f"[ERROR] Error showing GUI: {e}")
             click.echo("\nTry providing prompt directly:")
             click.echo(f'  {cli_name()} "your question here"')
             sys.exit(1)
@@ -774,12 +774,12 @@ def start(port, display, debug, config_dir):
             from auger.app import main as app_main
         app_main()
     except ImportError as e:
-        click.echo(f"❌ Error importing app: {e}")
+        click.echo(f"[ERROR] Error importing app: {e}")
         click.echo("Make sure all dependencies are installed:")
         click.echo("  pip install -e .")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"❌ Error starting {app_name()}: {e}")
+        click.echo(f"[ERROR] Error starting {app_name()}: {e}")
         if debug:
             import traceback
             traceback.print_exc()
@@ -859,17 +859,17 @@ def test(integration, config_dir):
             if result:
                 click.echo(f"✅ {integ} integration working!")
             else:
-                click.echo(f"❌ {integ} integration failed")
+                click.echo(f"[ERROR] {integ} integration failed")
                 
         except Exception as e:
-            click.echo(f"❌ {integ} test error: {e}")
+            click.echo(f"[ERROR] {integ} test error: {e}")
             results[integ] = False
     
     # Summary
     click.echo("\n" + "=" * 70)
     click.echo("Test Summary:")
     for integ, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "PASS" if result else "FAIL"
         click.echo(f"  {integ:15} {status}")
 
 
@@ -929,7 +929,7 @@ def doctor(config_dir):
     if py_version >= (3, 10):
         click.echo(f"✅ Python version: {py_version.major}.{py_version.minor}")
     else:
-        click.echo(f"❌ Python version: {py_version.major}.{py_version.minor} (requires >= 3.10)")
+        click.echo(f"[ERROR] Python version: {py_version.major}.{py_version.minor} (requires >= 3.10)")
         issues.append("Upgrade to Python 3.10 or higher")
     
     # Check config
@@ -937,14 +937,14 @@ def doctor(config_dir):
     if config_file.exists():
         click.echo(f"✅ Config file: {config_file}")
     else:
-        click.echo(f"❌ Config file not found: {config_file}")
+        click.echo(f"[ERROR] Config file not found: {config_file}")
         issues.append(f"Run: {cli_name()} init")
     
     # Check DISPLAY
     if 'DISPLAY' in os.environ:
         click.echo(f"✅ DISPLAY: {os.environ['DISPLAY']}")
     else:
-        click.echo("❌ DISPLAY not set")
+        click.echo("[ERROR] DISPLAY not set")
         issues.append("Set DISPLAY environment variable (e.g., export DISPLAY=:1)")
     
     # Check tkinter
@@ -952,7 +952,7 @@ def doctor(config_dir):
         import tkinter
         click.echo("✅ tkinter available")
     except ImportError:
-        click.echo("❌ tkinter not available")
+        click.echo("[ERROR] tkinter not available")
         issues.append("Install tkinter: apt install python3-tk")
     
     # Check dependencies
@@ -962,13 +962,13 @@ def doctor(config_dir):
         import dotenv
         click.echo("✅ Core dependencies installed")
     except ImportError as e:
-        click.echo(f"❌ Missing dependency: {e}")
+        click.echo(f"[ERROR] Missing dependency: {e}")
         issues.append("Install dependencies: pip install -e .")
     
     # Summary
     click.echo("\n" + "=" * 70)
     if issues:
-        click.echo("❌ Issues found:")
+        click.echo("[ERROR] Issues found:")
         for i, issue in enumerate(issues, 1):
             click.echo(f"  {i}. {issue}")
     else:
