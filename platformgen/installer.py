@@ -916,6 +916,13 @@ def run_install(options: InstallOptions, ui: InstallUI) -> dict[str, object]:
         if ask_genny_src.exists():
             shutil.copy2(ask_genny_src, ask_genny_dst)
             os.chmod(ask_genny_dst, 0o755)
+            # Also copy ask-genny.cmd as genny.cmd for Windows PATH
+            ask_genny_cmd_src = options.repo_dir / "scripts" / "ask-genny.cmd"
+            genny_cmd_dst = ask_genny_dst.parent / "genny.cmd"
+            if ask_genny_cmd_src.exists():
+                shutil.copy2(ask_genny_cmd_src, ask_genny_dst.parent / "ask-genny.cmd")
+                shutil.copy2(ask_genny_cmd_src, genny_cmd_dst)
+                ui.log(f"[OK] Installed genny.cmd and ask-genny.cmd to {ask_genny_dst.parent}")
             ui.log(f"[OK] Installed Ask Genny CLI to {ask_genny_dst}")
             # Add to user PATH if not present
             user_path = os.environ.get("PATH", "")
