@@ -29,6 +29,10 @@ except Exception:
 
 def run_copilot(prompt):
     """Run Copilot CLI with the given prompt."""
+    # Debug: Print token values
+    print("[DEBUG] COPILOT_GITHUB_TOKEN:", os.environ.get("COPILOT_GITHUB_TOKEN"))
+    print("[DEBUG] GH_TOKEN:", os.environ.get("GH_TOKEN"))
+    print("[DEBUG] GITHUB_TOKEN:", os.environ.get("GITHUB_TOKEN"))
     try:
         subprocess.run(
             ["copilot", "-p", prompt, "--allow-all", "--silent", "--continue"],
