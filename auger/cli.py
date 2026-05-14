@@ -233,7 +233,10 @@ def run_copilot_ask(prompt_text=None):
 
         # Acquire exclusive lockfile so concurrent auger calls never write to
         # the same copilot session simultaneously (prevents events.jsonl corruption)
-        import fcntl, json as _json_health
+        import sys as _sys
+        if _sys.platform != 'win32':
+            import fcntl
+        import json as _json_health
         lock_path = state_dir() / '.copilot.lock'
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         # Ensure the lock file is world-writable (0o666) so both the host user
@@ -373,7 +376,8 @@ def run_copilot_ask(prompt_text=None):
                 # Non-blocking: fail fast if another invocation is processing.
                 # Prevents unlocking mid-stream and corrupting events.jsonl.
                 try:
-                    fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if sys.platform != 'win32':
+                        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     _write_lock_metadata()
                 except BlockingIOError:
                     click.echo(
@@ -538,7 +542,8 @@ def run_copilot_ask(prompt_text=None):
                         pass
                 finally:
                     _clear_lock_metadata()
-                    fcntl.flock(lock_fh, fcntl.LOCK_UN)
+                    if sys.platform != 'win32':
+                        fcntl.flock(lock_fh, fcntl.LOCK_UN)
         except FileNotFoundError:
             click.echo("❌ Error: 'copilot' command not found")
             click.echo("\nPlease install standalone Copilot CLI:")
