@@ -18,13 +18,16 @@ try:
     from dotenv import dotenv_values
     state_dir = Path.home() / ".platformgen"
     env_path = state_dir / ".env"
+    print(f"[DEBUG] .env path: {env_path}")
+    print(f"[DEBUG] .env exists: {env_path.exists()}")
     if env_path.exists():
         env_vars = dotenv_values(env_path)
+        print(f"[DEBUG] Loaded env_vars: {env_vars}")
         for k, v in env_vars.items():
             if k in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN") and v:
                 os.environ[k] = v
-except Exception:
-    pass
+except Exception as e:
+    print(f"[DEBUG] Exception loading .env: {e}")
 
 
 def run_copilot(prompt):
