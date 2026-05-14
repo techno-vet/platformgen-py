@@ -909,6 +909,9 @@ def run_install(options: InstallOptions, ui: InstallUI) -> dict[str, object]:
         except ImportError:
             ui.log("[PKG] Installing tzdata for time zone support (Windows)")
             subprocess.run([str(_venv_python(options.state_dir)), "-m", "pip", "install", "tzdata"], check=False)
+        # Install python-dotenv for Ask Genny CLI
+        ui.log("[PKG] Installing python-dotenv for Ask Genny CLI")
+        subprocess.run([str(_venv_python(options.state_dir)), "-m", "pip", "install", "python-dotenv"], check=False)
         # Install Ask Genny CLI
         ask_genny_src = options.repo_dir / "scripts" / "ask-genny"
         ask_genny_dst = options.state_dir / "bin" / "genny"
