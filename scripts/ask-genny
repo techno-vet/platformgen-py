@@ -13,18 +13,16 @@ import sys
 
 
 def run_copilot(prompt):
-    """Run gh copilot with the given prompt."""
+    """Run Copilot CLI with the given prompt."""
     try:
         subprocess.run(
-            ["gh", "copilot", "-p", prompt, "--allow-all", "--silent", "--continue"],
+            ["copilot", "-p", prompt, "--allow-all", "--silent", "--continue"],
             check=False,
         )
     except FileNotFoundError:
-        print("❌ Error: 'gh' command not found")
-        print("\nPlease install GitHub CLI:")
-        print("  https://cli.github.com/")
-        print("\nThen install copilot extension:")
-        print("  gh extension install github/gh-copilot")
+        print("❌ Error: 'copilot' command not found")
+        print("\nPlease install the Copilot CLI:")
+        print("  https://github.com/github-copilot/cli")
         sys.exit(1)
 
 
