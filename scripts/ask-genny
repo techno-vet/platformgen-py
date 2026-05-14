@@ -33,6 +33,7 @@ def run_copilot(prompt):
         subprocess.run(
             ["copilot", "-p", prompt, "--allow-all", "--silent", "--continue"],
             check=False,
+            env=os.environ.copy(),
         )
     except FileNotFoundError:
         print("❌ Error: 'copilot' command not found")
