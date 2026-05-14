@@ -914,9 +914,11 @@ def run_install(options: InstallOptions, ui: InstallUI) -> dict[str, object]:
         ask_genny_dst = options.state_dir / "bin" / "genny"
         ask_genny_dst.parent.mkdir(parents=True, exist_ok=True)
         if ask_genny_src.exists():
+            # Copy ask-genny as both ask-genny and ask-genny (no extension) to bin dir
             shutil.copy2(ask_genny_src, ask_genny_dst)
+            shutil.copy2(ask_genny_src, ask_genny_dst.parent / "ask-genny")
             os.chmod(ask_genny_dst, 0o755)
-            # Also copy ask-genny.cmd as genny.cmd for Windows PATH
+            # Also copy ask-genny.cmd as genny.cmd and ask-genny.cmd for Windows PATH
             ask_genny_cmd_src = options.repo_dir / "scripts" / "ask-genny.cmd"
             genny_cmd_dst = ask_genny_dst.parent / "genny.cmd"
             if ask_genny_cmd_src.exists():
