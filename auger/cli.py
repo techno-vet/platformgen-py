@@ -17,6 +17,7 @@ from auger.ai.provider_sessions import (
     read_copilot_pinned_session_id,
     write_copilot_pinned_session_id,
 )
+from auger.utils.file_lock import acquire_file_lock, ensure_lock_file, release_file_lock
 from platformgen.runtime import app_name, assistant_name, cli_name, product_name, repo_dir, state_dir
 
 
@@ -233,22 +234,9 @@ def run_copilot_ask(prompt_text=None):
 
         # Acquire exclusive lockfile so concurrent auger calls never write to
         # the same copilot session simultaneously (prevents events.jsonl corruption)
-        import sys as _sys
-        if _sys.platform != 'win32':
-            import fcntl
         import json as _json_health
         lock_path = state_dir() / '.copilot.lock'
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        # Ensure the lock file is world-writable (0o666) so both the host user
-        # and the container auger user (different UIDs) can acquire it.
-        if not lock_path.exists():
-            import os as _os
-            fd = _os.open(str(lock_path), _os.O_CREAT | _os.O_WRONLY, 0o666)
-            _os.close(fd)
-        try:
-            lock_path.chmod(0o666)
-        except Exception:
-            pass
+        ensure_lock_file(lock_path)
         lock_meta_path = lock_path.with_suffix(lock_path.suffix + '.json')
 
         def _write_lock_metadata():
@@ -322,7 +310,7 @@ def run_copilot_ask(prompt_text=None):
 
             session_id = str(_uuid.uuid4())
             session_mode = 'new'
-            session_args = ['--resume', session_id]
+            session_args = [f'--session-id={session_id}']
         else:
             session_id = pinned_session_id
             session_mode = 'pinned'
@@ -333,7 +321,7 @@ def run_copilot_ask(prompt_text=None):
             session_id = None
             session_args = ['--continue']
             print(
-                '[33m⚠️  Corrupt pinned session detected — starting fresh session[0m',
+                '[WARN] Corrupt pinned session detected - starting fresh session',
                 flush=True
             )
         elif session_mode == 'session' and session_id and _session_is_corrupt(session_id):
@@ -341,9 +329,9 @@ def run_copilot_ask(prompt_text=None):
 
             session_id = str(_uuid.uuid4())
             session_mode = 'new'
-            session_args = ['--resume', session_id]
+            session_args = [f'--session-id={session_id}']
             print(
-                '[33m⚠️  Selected session is unhealthy — switching this request to a fresh session[0m',
+                '[WARN] Selected session is unhealthy - switching this request to a fresh session',
                 flush=True
             )
 
@@ -376,19 +364,18 @@ def run_copilot_ask(prompt_text=None):
                 # Non-blocking: fail fast if another invocation is processing.
                 # Prevents unlocking mid-stream and corrupting events.jsonl.
                 try:
-                    if sys.platform != 'win32':
-                        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquire_file_lock(lock_fh, blocking=False)
                     _write_lock_metadata()
                 except BlockingIOError:
                     click.echo(
-                        f'⏳ Another Ask {assistant_name()} request is already processing. '
+                        f'Another Ask {assistant_name()} request is already processing. '
                         'Wait for it to finish before sending a new prompt. '
                         f'(If this is stale, remove {state_dir() / ".copilot.lock"})'
                     )
                     import sys as _sys2; _sys2.exit(1)
                 try:
                     # Stream output to terminal AND capture for chat_history.jsonl
-                    run_name_args = [] if '--resume' in session_args else name_args
+                    run_name_args = [] if '--resume' in session_args or any(arg.startswith('--session-id=') for arg in session_args) else name_args
                     proc = subprocess.Popen(
                         ["copilot"] + model_args + run_name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -451,9 +438,9 @@ def run_copilot_ask(prompt_text=None):
                             session_id = None
                             session_args = ["--continue"]
                             print(
-                                '\n⚠️  Copilot session transcript mismatch detected '
+                                '\n[WARN] Copilot session transcript mismatch detected '
                                 '(tool_use/tool_result sequence error).\n'
-                                '    Cleared pinned session and retrying once with a fresh session; '
+                                '       Cleared pinned session and retrying once with a fresh session; '
                                 'context is preserved via snapshot preamble.',
                                 flush=True
                             )
@@ -462,9 +449,9 @@ def run_copilot_ask(prompt_text=None):
 
                             session_id = str(_uuid.uuid4())
                             session_mode = 'new'
-                            session_args = ['--resume', session_id]
+                            session_args = [f'--session-id={session_id}']
                             print(
-                                '\n⚠️  Ask Genny session error detected — retrying once with a fresh non-pinned session.',
+                                '\n[WARN] Ask Genny session error detected - retrying once with a fresh non-pinned session.',
                                 flush=True
                             )
                         elif _has_400:
@@ -477,13 +464,13 @@ def run_copilot_ask(prompt_text=None):
                             except Exception:
                                 pass
                             print(
-                                '\n⚠️  CAPIError 400 — retrying Copilot call. '
+                                '\n[WARN] CAPIError 400 - retrying Copilot call. '
                                 + ('Cleared hosts.json first.' if _cleared else 'hosts.json not changed.'),
                                 flush=True
                             )
 
                         response_lines = []
-                        run_name_args = [] if '--resume' in session_args else name_args
+                        run_name_args = [] if '--resume' in session_args or any(arg.startswith('--session-id=') for arg in session_args) else name_args
                         proc2 = subprocess.Popen(
                             ["copilot"] + model_args + run_name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -496,17 +483,17 @@ def run_copilot_ask(prompt_text=None):
 
                         if _re.search(r'CAPIError.*400|400.*Bad Request', _full_out, _re.IGNORECASE):
                             print(
-                                '\n❌  Copilot still failing after auto-retry.\n'
-                                '    Run this once in a terminal, then retry your prompt:\n'
-                                '      copilot auth login\n'
-                                f'    Session pin file: {copilot_pin_path(selected_model)}',
+                                '\n[ERROR] Copilot still failing after auto-retry.\n'
+                                '        Run this once in a terminal, then retry your prompt:\n'
+                                '          copilot auth login\n'
+                                f'        Session pin file: {copilot_pin_path(selected_model)}',
                                 flush=True
                             )
                         elif any(m in _lower_out for m in _session_protocol_markers):
                             print(
-                                '\n❌  Copilot session is still returning tool protocol errors after retry.\n'
-                                '    Use the recovery helper to rebuild a clean session:\n'
-                                '      python3 scripts/recover_copilot_session.py',
+                                '\n[ERROR] Copilot session is still returning tool protocol errors after retry.\n'
+                                '        Use the recovery helper to rebuild a clean session:\n'
+                                '          python3 scripts/recover_copilot_session.py',
                                 flush=True
                             )
 
@@ -542,10 +529,9 @@ def run_copilot_ask(prompt_text=None):
                         pass
                 finally:
                     _clear_lock_metadata()
-                    if sys.platform != 'win32':
-                        fcntl.flock(lock_fh, fcntl.LOCK_UN)
+                    release_file_lock(lock_fh)
         except FileNotFoundError:
-            click.echo("❌ Error: 'copilot' command not found")
+            click.echo("Error: 'copilot' command not found")
             click.echo("\nPlease install standalone Copilot CLI:")
             click.echo("  curl -fsSL https://gh.io/copilot-install | bash")
             click.echo("\nOr with Homebrew:")
@@ -654,7 +640,7 @@ def platformgen_main():
     # Check if ~/.local/bin is in PATH (warn only once per session)
     local_bin = Path.home() / ".local" / "bin"
     if local_bin.exists() and str(local_bin) not in os.environ.get("PATH", ""):
-        click.echo("⚠️  Warning: ~/.local/bin is not in your PATH", err=True)
+        click.echo("Warning: ~/.local/bin is not in your PATH", err=True)
         click.echo("   Add this to your ~/.bashrc:", err=True)
         click.echo('   export PATH="$HOME/.local/bin:$PATH"', err=True)
         click.echo("", err=True)
@@ -708,7 +694,7 @@ def init(token, config_dir, datadog_api_key, datadog_app_key):
     else:
         config_dir = Path(config_dir)
     
-    click.echo(f"📁 Initializing {app_name()} in: {config_dir}")
+    click.echo(f"Initializing {app_name()} in: {config_dir}")
     
     # Create config manager
     config = AugerConfigManager(config_dir)
@@ -720,8 +706,8 @@ def init(token, config_dir, datadog_api_key, datadog_app_key):
         datadog_app_key=datadog_app_key
     )
     
-    click.echo(f"\n✅ {app_name()} initialized successfully!")
-    click.echo(f"📁 Config directory: {config_dir}")
+    click.echo(f"\n{app_name()} initialized successfully!")
+    click.echo(f"Config directory: {config_dir}")
     click.echo(f"📄 Config file: {config_dir / 'config.yaml'}")
     click.echo(f"🔐 Secrets file: {config_dir / '.env'}")
     
@@ -731,7 +717,7 @@ def init(token, config_dir, datadog_api_key, datadog_app_key):
     click.echo("  3. Ask: 'Help me set up DataDog integration'")
     
     if not datadog_api_key:
-        click.echo(f"\n💡 Tip: You can configure DataDog later by asking {assistant_name()}!")
+        click.echo(f"\nTip: You can configure DataDog later by asking {assistant_name()}!")
 
 
 @main.command()
@@ -862,7 +848,7 @@ def test(integration, config_dir):
             results[integ] = result
             
             if result:
-                click.echo(f"✅ {integ} integration working!")
+                click.echo(f"{integ} integration working!")
             else:
                 click.echo(f"[ERROR] {integ} integration failed")
                 
@@ -907,11 +893,11 @@ def widgets(config_dir):
         
         widget_name = widget_file.stem
         enabled = config.is_widget_enabled(widget_name)
-        status = "✅ Enabled" if enabled else "⚪ Disabled"
+        status = "Enabled" if enabled else "Disabled"
         
         click.echo(f"  {widget_name:30} {status}")
     
-    click.echo(f"\n💡 Enable/disable widgets in: {state_dir() / 'config.yaml'}")
+    click.echo(f"\nEnable/disable widgets in: {state_dir() / 'config.yaml'}")
 
 
 @main.command()
@@ -932,7 +918,7 @@ def doctor(config_dir):
     import sys
     py_version = sys.version_info
     if py_version >= (3, 10):
-        click.echo(f"✅ Python version: {py_version.major}.{py_version.minor}")
+        click.echo(f"Python version: {py_version.major}.{py_version.minor}")
     else:
         click.echo(f"[ERROR] Python version: {py_version.major}.{py_version.minor} (requires >= 3.10)")
         issues.append("Upgrade to Python 3.10 or higher")
@@ -940,14 +926,14 @@ def doctor(config_dir):
     # Check config
     config_file = config_dir / 'config.yaml'
     if config_file.exists():
-        click.echo(f"✅ Config file: {config_file}")
+        click.echo(f"Config file: {config_file}")
     else:
         click.echo(f"[ERROR] Config file not found: {config_file}")
         issues.append(f"Run: {cli_name()} init")
     
     # Check DISPLAY
     if 'DISPLAY' in os.environ:
-        click.echo(f"✅ DISPLAY: {os.environ['DISPLAY']}")
+        click.echo(f"DISPLAY: {os.environ['DISPLAY']}")
     else:
         click.echo("[ERROR] DISPLAY not set")
         issues.append("Set DISPLAY environment variable (e.g., export DISPLAY=:1)")
@@ -955,7 +941,7 @@ def doctor(config_dir):
     # Check tkinter
     try:
         import tkinter
-        click.echo("✅ tkinter available")
+        click.echo("tkinter available")
     except ImportError:
         click.echo("[ERROR] tkinter not available")
         issues.append("Install tkinter: apt install python3-tk")
@@ -965,7 +951,7 @@ def doctor(config_dir):
         import requests
         import yaml
         import dotenv
-        click.echo("✅ Core dependencies installed")
+        click.echo("Core dependencies installed")
     except ImportError as e:
         click.echo(f"[ERROR] Missing dependency: {e}")
         issues.append("Install dependencies: pip install -e .")
@@ -977,7 +963,7 @@ def doctor(config_dir):
         for i, issue in enumerate(issues, 1):
             click.echo(f"  {i}. {issue}")
     else:
-        click.echo(f"✅ All checks passed! {app_name()} is ready to use.")
+        click.echo(f"All checks passed. {app_name()} is ready to use.")
     click.echo(f"\nRun: {cli_name()} start")
 
 

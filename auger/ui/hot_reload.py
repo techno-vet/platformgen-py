@@ -9,6 +9,19 @@ import importlib.util
 from pathlib import Path
 
 
+def _safe_log(message: str) -> None:
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        stream = getattr(sys, "stdout", None)
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        safe = message.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        if stream is not None:
+            stream.write(safe + "\n")
+        else:
+            print(safe)
+
+
 class HotReloader:
     """Watches ui/widgets/*.py for changes and reloads them."""
     
@@ -64,7 +77,7 @@ class HotReloader:
                 try:
                     fn(*args)
                 except Exception as e:
-                    print(f"Hot reload callback error: {e}")
+                    _safe_log(f"Hot reload callback error: {e}")
         except queue.Empty:
             pass
         if self._root is not None and self._running:
@@ -88,7 +101,7 @@ class HotReloader:
         # Ensure poll loop is running (may have been stopped if start() called late)
         if self._root is not None:
             self._root.after(50, self._poll_q)
-        print(f"[*] Hot reload started, watching {self.watch_dir}")
+        _safe_log(f"[*] Hot reload started, watching {self.watch_dir}")
     
     def stop(self):
         """Stop the watcher thread."""
@@ -102,14 +115,14 @@ class HotReloader:
             try:
                 self._check_files()
             except Exception as e:
-                print(f"Hot reload error: {e}")
+                _safe_log(f"Hot reload error: {e}")
             if not self._first_scan_done:
                 self._first_scan_done = True
                 for cb in self._first_scan_callbacks:
                     try:
                         self._dispatch(cb)
                     except Exception as e:
-                        print(f"First scan callback error: {e}")
+                        _safe_log(f"First scan callback error: {e}")
             time.sleep(self.interval)
     
     def _check_files(self):
@@ -132,7 +145,7 @@ class HotReloader:
                     # Track new files and trigger callback for initial load
                     if path not in self._mtimes:
                         self._mtimes[path] = mtime
-                        print(f"[+] Tracking {path.name} ({watch_dir.name})")
+                        _safe_log(f"[+] Tracking {path.name} ({watch_dir.name})")
                         # Load and notify callbacks for new widgets
                         module = self._reload_module(path)
                         if module:
@@ -151,7 +164,7 @@ class HotReloader:
                                 self._dispatch(callback, path, module)
 
                 except Exception as e:
-                    print(f"Error checking {path}: {e}")
+                    _safe_log(f"Error checking {path}: {e}")
 
         # Check ui/ parent dir for non-widget files (ask_genny.py, etc.)
         # Use a deduped set of already-seen resolved inodes to avoid double-firing
@@ -176,7 +189,7 @@ class HotReloader:
                     key = ('ui', path.name)
                     if key not in self._mtimes:
                         self._mtimes[key] = mtime
-                        print(f"[+] Tracking {path.name} (ui)")
+                        _safe_log(f"[+] Tracking {path.name} (ui)")
                         # Do NOT reload on initial scan — ui/ modules are already
                         # loaded by app.py and live as active Tkinter classes.
                         # Reloading them from the background thread causes SIGSEGV.
@@ -188,7 +201,7 @@ class HotReloader:
                             for cb in self._ui_callbacks:
                                 self._dispatch(cb, path, module)
                 except Exception as e:
-                    print(f"Error checking ui/{path.name}: {e}")
+                    _safe_log(f"Error checking ui/{path.name}: {e}")
     
     def _reload_ui_module(self, path):
         """Reload or import a ui-level module (e.g. auger.ui.ask_genny)."""
@@ -197,10 +210,10 @@ class HotReloader:
                 import auger.ui
             module_name = f"auger.ui.{path.stem}"
             if module_name in sys.modules:
-                print(f"[*] Reloading {module_name}")
+                _safe_log(f"[*] Reloading {module_name}")
                 return importlib.reload(sys.modules[module_name])
             else:
-                print(f"[+] Loading {module_name}")
+                _safe_log(f"[+] Loading {module_name}")
                 spec = importlib.util.spec_from_file_location(module_name, path)
                 if not spec or not spec.loader:
                     return None
@@ -209,10 +222,10 @@ class HotReloader:
                 spec.loader.exec_module(module)
                 return module
         except SyntaxError as e:
-            print(f"[X] Syntax error in {path.name}:\n  {e}")
+            _safe_log(f"[X] Syntax error in {path.name}:\n  {e}")
             return None
         except Exception as e:
-            print(f"[X] Error loading {path.name}: {e}")
+            _safe_log(f"[X] Error loading {path.name}: {e}")
             return None
 
     def _reload_module(self, path):
@@ -229,11 +242,11 @@ class HotReloader:
 
             # If already loaded, reload it
             if module_name in sys.modules:
-                print(f"[*] Reloading {module_name}")
+                _safe_log(f"[*] Reloading {module_name}")
                 module = importlib.reload(sys.modules[module_name])
             else:
                 # Load fresh
-                print(f"[+] Loading {module_name}")
+                _safe_log(f"[+] Loading {module_name}")
                 spec = importlib.util.spec_from_file_location(module_name, path)
                 if not spec or not spec.loader:
                     return None
@@ -245,8 +258,8 @@ class HotReloader:
             return module
 
         except SyntaxError as e:
-            print(f"[X] Syntax error in {path.name}:\n  {e}")
+            _safe_log(f"[X] Syntax error in {path.name}:\n  {e}")
             return None
         except Exception as e:
-            print(f"[X] Error loading {path.name}: {e}")
+            _safe_log(f"[X] Error loading {path.name}: {e}")
             return None
