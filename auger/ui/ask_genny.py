@@ -58,6 +58,7 @@ ASK_HEADER_COMBO_LIST_FONT = ('Segoe UI', 11)
 
 SESSION_HEALTH_POLL_MS = 5000
 SESSION_LOCK_STALE_SECS = 15
+_WINDOWS_HIDDEN_PROCESS = 0x08000000 if os.name == "nt" else 0
 
 
 class AskGennyPanel(tk.Frame):
@@ -1242,6 +1243,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
     def _run_auger(self, prompt, on_complete=None):
         try:
             # Start process with token env vars from the runtime .env
+            popen_kwargs = {}
+            if _WINDOWS_HIDDEN_PROCESS:
+                popen_kwargs['creationflags'] = _WINDOWS_HIDDEN_PROCESS
             self._process = subprocess.Popen(
                 [self._auger, prompt],
                 stdout=subprocess.PIPE,
@@ -1251,6 +1255,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 errors='replace',
                 bufsize=1,
                 env=self._auger_env(),
+                **popen_kwargs,
             )
             
             response_lines = []

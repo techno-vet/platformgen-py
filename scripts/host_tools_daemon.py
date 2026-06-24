@@ -74,6 +74,7 @@ ACTIVE_COPILOT_LOCK = threading.Lock()
 ACTIVE_COPILOT: dict[str, object] = {}
 STATE_DIR_LABEL = str(AUGER_DIR)
 SELENIUM_VENV_DIR = AUGER_DIR / 'sn_venv'
+WINDOWS_HIDDEN_PROCESS = 0x08000000 if os.name == "nt" else 0
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────
@@ -1343,10 +1344,14 @@ def stream_ask_copilot(cmd: dict, write_line):
                 """Run copilot subprocess and return (response_lines, returncode, cancelled)."""
                 lines_out = []
                 run_name_args = [] if '--resume' in s_args or any(arg.startswith('--session-id=') for arg in s_args) else name_args
+                popen_kwargs = {}
+                if WINDOWS_HIDDEN_PROCESS:
+                    popen_kwargs['creationflags'] = WINDOWS_HIDDEN_PROCESS
                 p = subprocess.Popen(
                     [copilot_bin] + model_args + run_name_args + ['-p', enriched, '--allow-all'] + s_args,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding='utf-8', errors='replace', bufsize=1, env=env
+                    text=True, encoding='utf-8', errors='replace', bufsize=1, env=env,
+                    **popen_kwargs,
                 )
                 active_state = _register_active_copilot(
                     p,

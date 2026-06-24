@@ -20,6 +20,8 @@ from auger.ai.provider_sessions import (
 from auger.utils.file_lock import acquire_file_lock, ensure_lock_file, release_file_lock
 from platformgen.runtime import app_name, assistant_name, cli_name, product_name, repo_dir, state_dir
 
+WINDOWS_HIDDEN_PROCESS = 0x08000000 if os.name == "nt" else 0
+
 
 # ── Session Snapshot (Layer 1 + 2) ────────────────────────────────────────────
 
@@ -376,10 +378,14 @@ def run_copilot_ask(prompt_text=None):
                 try:
                     # Stream output to terminal AND capture for chat_history.jsonl
                     run_name_args = [] if '--resume' in session_args or any(arg.startswith('--session-id=') for arg in session_args) else name_args
+                    popen_kwargs = {}
+                    if WINDOWS_HIDDEN_PROCESS:
+                        popen_kwargs['creationflags'] = WINDOWS_HIDDEN_PROCESS
                     proc = subprocess.Popen(
                         ["copilot"] + model_args + run_name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        env=env
+                        env=env,
+                        **popen_kwargs,
                     )
                     _STATS_PREFIXES = (
                         'Total usage est:', 'API time spent:', 'Total session time:',
@@ -474,7 +480,8 @@ def run_copilot_ask(prompt_text=None):
                         proc2 = subprocess.Popen(
                             ["copilot"] + model_args + run_name_args + ["-p", _enriched_prompt, "--allow-all"] + session_args,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            env=env
+                            env=env,
+                            **popen_kwargs,
                         )
                         _stream_proc(proc2, response_lines)
                         _final_rc = proc2.returncode
