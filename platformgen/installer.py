@@ -31,6 +31,11 @@ INSTALL_METADATA = "install-metadata.json"
 COPILOT_INSTALL_URL = "https://gh.io/copilot-install"
 GHE_DEFAULT_URL = ""  # No default; prompt only if user requests enterprise GitHub
 
+# Windows process creation flags for detached/background launch without visible consoles.
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_NO_WINDOW = 0x08000000
+
 ASTUTL_CANDIDATES = [
     Path.home() / ".astutl" / "astutl_secure_config.env",
     Path.home() / "repos" / "devtools-scripts" / "au-silver" / "config" / ".astutl" / "astutl_secure_config.env",
@@ -752,7 +757,7 @@ def _daemon_health(daemon_port: int) -> bool:
 def _spawn_detached(cmd: list[str], *, env: dict, stdout, stderr):
     kwargs = {"env": env, "stdout": stdout, "stderr": stderr}
     if os.name == "nt":
-        kwargs["creationflags"] = 0x00000008 | 0x00000200
+        kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
         kwargs["close_fds"] = True
     else:
         kwargs["start_new_session"] = True

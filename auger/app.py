@@ -39,6 +39,17 @@ def _runtime_mode() -> str:
     return "venv" if mode == "venv" else "docker"
 
 
+def _set_windows_app_user_model_id() -> None:
+    """Set explicit Windows AppUserModelID so taskbar/start icon mapping is stable."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(window_class())
+    except Exception:
+        pass
+
+
 def _activation_socket_path() -> Path:
     suffix = "host" if _runtime_mode() == "venv" else "sre"
     return state_dir() / f"platform-activate-{suffix}.sock"
@@ -73,6 +84,7 @@ class PlatformGenApp(tk.Tk):
     
     def __init__(self):
         super().__init__(className=window_class())
+        _set_windows_app_user_model_id()
 
         self._runtime_mode = _runtime_mode()
         self.title(product_name())
@@ -84,13 +96,23 @@ class PlatformGenApp(tk.Tk):
         # Save PNG to tmp then load with tk.PhotoImage — most reliable on X11.
         try:
             from platformgen.ui.icons import load_app_icon
-            import tempfile, os
+            import os
+
             _icon_img = load_app_icon(256).convert("RGBA")
             _icon_tmp = os.path.join(os.fspath(state_dir()), "app_icon.png")
             _icon_img.save(_icon_tmp)
             _icon_photo = tk.PhotoImage(file=_icon_tmp)
             self.iconphoto(True, _icon_photo)
             self._icon_photo_ref = _icon_photo  # prevent GC
+
+            if sys.platform == "win32":
+                # Also set an .ico for better Start/taskbar fidelity on Windows.
+                _icon_ico = os.path.join(os.fspath(state_dir()), "app_icon.ico")
+                _icon_img.save(_icon_ico, format="ICO")
+                try:
+                    self.iconbitmap(default=_icon_ico)
+                except Exception:
+                    pass
         except Exception as _e:
             print(f"[!] iconphoto failed: {_e}")
         
