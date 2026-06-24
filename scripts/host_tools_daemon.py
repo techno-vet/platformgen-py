@@ -21,6 +21,7 @@ import json
 import os
 import sys
 import subprocess
+import shutil
 import glob as glob_mod
 import re
 import shlex
@@ -56,6 +57,7 @@ from auger.ai.providers import (
     openai_base_url,
     provider_supports_copilot_sessions,
 )
+from auger.utils.file_lock import acquire_file_lock, ensure_lock_file, probe_file_lock, release_file_lock
 from auger.runtime import app_name as runtime_app_name, cli_name as runtime_cli_name, repo_dir as runtime_repo_dir, state_dir as runtime_state_dir
 
 PORT = int(os.environ.get('PLATFORMGEN_DAEMON_PORT') or os.environ.get('AUGER_DAEMON_PORT') or '7438')
@@ -77,11 +79,16 @@ SELENIUM_VENV_DIR = AUGER_DIR / 'sn_venv'
 # ── Utility ───────────────────────────────────────────────────────────────────
 
 def _find_bin(*names):
-    """Find first available binary, searching /snap/bin and ~/.local/bin too."""
+    """Find first available binary, searching platform-specific PATH locations."""
     env_path = f"/snap/bin:{Path.home()}/.local/bin:{os.environ.get('PATH', '')}"
     for name in names:
         if os.path.isfile(name) and os.access(name, os.X_OK):
             return name
+        resolved = shutil.which(name)
+        if resolved:
+            return resolved
+        if os.name == "nt":
+            continue
         r = subprocess.run(['bash', '-c', f'PATH="{env_path}" command -v "{name}"'],
                            capture_output=True, text=True)
         if r.returncode == 0 and r.stdout.strip():
@@ -1187,7 +1194,7 @@ def stream_ask_copilot(cmd: dict, write_line):
     """Run copilot on the host with session locking + pinned session ID.
     Serializes all requests so concurrent calls never corrupt events.jsonl.
     Streams output back as NDJSON and appends to the shared chat history."""
-    import fcntl, time
+    import time
     import uuid
 
     prompt = cmd.get('prompt', '').strip()
@@ -1265,7 +1272,7 @@ def stream_ask_copilot(cmd: dict, write_line):
         session_args = ['--resume', session_id]
     elif session_mode == 'new':
         session_id = requested_session_id or str(uuid.uuid4())
-        session_args = ['--resume', session_id]
+        session_args = [f'--session-id={session_id}']
     else:
         session_mode = 'pinned'
         session_id = pinned_session_id
@@ -1282,7 +1289,7 @@ def stream_ask_copilot(cmd: dict, write_line):
     elif session_mode == 'session' and session_id and _session_is_corrupt(session_id):
         session_mode = 'new'
         session_id = str(uuid.uuid4())
-        session_args = ['--resume', session_id]
+        session_args = [f'--session-id={session_id}']
         write_line({'type': 'progress', 'message': '[WARN] Selected session is unhealthy — switching this request to a fresh session'})
 
     copilot_bin = _find_bin('copilot')
@@ -1302,21 +1309,14 @@ def stream_ask_copilot(cmd: dict, write_line):
     write_line({'type': 'progress', 'message': '⏳ Acquiring session lock...'})
     # Ensure lock file is world-writable (0o666) so both host user and container
     # auger user (different UIDs) can acquire it without PermissionError.
-    if not lock_path.exists():
-        import os as _os_lock
-        fd = _os_lock.open(str(lock_path), _os_lock.O_CREAT | _os_lock.O_WRONLY, 0o666)
-        _os_lock.close(fd)
-    try:
-        lock_path.chmod(0o666)
-    except Exception:
-        pass
+    ensure_lock_file(lock_path)
 
     # Acquire lock with timeout (30s) so a stuck/abandoned call never blocks forever.
     _lock_deadline = time.time() + 30
     with open(lock_path, 'r+') as lock_fh:
         while True:
             try:
-                fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquire_file_lock(lock_fh, blocking=False)
                 _write_lock_metadata(lock_path)
                 break
             except BlockingIOError:
@@ -1342,11 +1342,11 @@ def stream_ask_copilot(cmd: dict, write_line):
             def _run_copilot(s_args, enriched):
                 """Run copilot subprocess and return (response_lines, returncode, cancelled)."""
                 lines_out = []
-                run_name_args = [] if '--resume' in s_args else name_args
+                run_name_args = [] if '--resume' in s_args or any(arg.startswith('--session-id=') for arg in s_args) else name_args
                 p = subprocess.Popen(
                     [copilot_bin] + model_args + run_name_args + ['-p', enriched, '--allow-all'] + s_args,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, env=env
+                    text=True, encoding='utf-8', errors='replace', bufsize=1, env=env
                 )
                 active_state = _register_active_copilot(
                     p,
@@ -1421,7 +1421,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                     session_id = str(uuid.uuid4())
                     write_line({'type': 'progress',
                                 'message': '[WARN] Session error detected — retrying with a fresh non-pinned session…'})
-                    response_lines, rc, was_cancelled = _run_copilot(['--resume', session_id], _enriched_prompt)
+                    response_lines, rc, was_cancelled = _run_copilot([f'--session-id={session_id}'], _enriched_prompt)
 
             if was_cancelled:
                 write_line({
@@ -1479,7 +1479,7 @@ def stream_ask_copilot(cmd: dict, write_line):
             write_line({'type': 'error', 'message': str(e)})
         finally:
             _clear_lock_metadata(lock_path)
-            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+            release_file_lock(lock_fh)
 
 
 def _ask_genny_system_prompt() -> str:
@@ -2183,13 +2183,13 @@ SYNC_ACTIONS = {
 
 def stream_reinit_session(cmd: dict, write_line):
     """Clear the pinned session for the active provider/model scope."""
-    import fcntl as _fcntl
     provider = normalize_provider(cmd.get('provider'))
     model = normalize_model(provider, cmd.get('model'))
     lock_path = AUGER_DIR / '.copilot.lock'
     write_line({'type': 'progress', 'message': f'🔄 Reinitializing {provider} session…'})
-    with open(lock_path, 'w') as _lf:
-        _fcntl.flock(_lf, _fcntl.LOCK_EX)
+    ensure_lock_file(lock_path)
+    with open(lock_path, 'r+') as _lf:
+        acquire_file_lock(_lf, blocking=True)
         try:
             if provider_supports_copilot_sessions(provider):
                 old_id = read_copilot_pinned_session_id(model)
@@ -2207,7 +2207,7 @@ def stream_reinit_session(cmd: dict, write_line):
                         'message': '[OK] Session cleared — next message will start a fresh scoped session with full context snapshot.'})
             write_line({'type': 'done', 'status': 'ok', 'provider': provider, 'model': model})
         finally:
-            _fcntl.flock(_lf, _fcntl.LOCK_UN)
+            release_file_lock(_lf)
 
 
 STREAM_ACTIONS = {
@@ -2281,15 +2281,12 @@ class DaemonHandler(http.server.BaseHTTPRequestHandler):
             locked_secs = 0
             last_response_ts = None
             try:
-                import fcntl as _fcntl
                 if lock_path.exists():
                     with open(lock_path, 'r+') as _lf:
-                        try:
-                            _fcntl.flock(_lf, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-                            _fcntl.flock(_lf, _fcntl.LOCK_UN)
+                        if probe_file_lock(_lf):
                             locked = False
                             _clear_lock_metadata(lock_path)
-                        except BlockingIOError:
+                        else:
                             locked = True
                             try:
                                 meta = json.loads(_lock_meta_path(lock_path).read_text())

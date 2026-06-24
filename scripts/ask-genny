@@ -1,100 +1,59 @@
 #!/usr/bin/env python3
-"""
-Ask Genny - Quick GitHub Copilot wrapper
-Can be used standalone or symlinked for easy access
+"""Bootstrap the installed Genny CLI from a copied helper script."""
 
-Usage:
-  ask-genny "how do I deploy?"
-  ask-genny  (opens GUI)
-"""
+from __future__ import annotations
 
+import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 
-# Load .env from PlatformGen state dir
-try:
-    from dotenv import dotenv_values
-    state_dir = Path.home() / ".platformgen"
-    env_path = state_dir / ".env"
-    print(f"[DEBUG] .env path: {env_path}")
-    print(f"[DEBUG] .env exists: {env_path.exists()}")
-    if env_path.exists():
-        env_vars = dotenv_values(env_path)
-        print(f"[DEBUG] Loaded env_vars: {env_vars}")
-        for k, v in env_vars.items():
-            if k in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN") and v:
-                os.environ[k] = v
-except Exception as e:
-    print(f"[DEBUG] Exception loading .env: {e}")
+
+def _invoke_adjacent_entrypoint() -> int | None:
+    base_dir = Path(__file__).resolve().parent
+    if os.name == "nt":
+        scripts_dir = base_dir.parent / "venv" / "Scripts"
+        candidates = [
+            [str(scripts_dir / "genny.exe"), *sys.argv[1:]],
+            [
+                str(scripts_dir / "python.exe"),
+                "-c",
+                "from platformgen.cli import genny_main; genny_main()",
+                *sys.argv[1:],
+            ],
+        ]
+    else:
+        bin_dir = base_dir.parent / "venv" / "bin"
+        candidates = [
+            [str(bin_dir / "genny"), *sys.argv[1:]],
+            [
+                str(bin_dir / "python"),
+                "-c",
+                "from platformgen.cli import genny_main; genny_main()",
+                *sys.argv[1:],
+            ],
+        ]
+
+    for command in candidates:
+        if Path(command[0]).exists():
+            return subprocess.run(command, check=False).returncode
+    return None
 
 
-def run_copilot(prompt):
-    """Run Copilot CLI with the given prompt."""
-    # Debug: Print token values
-    print("[DEBUG] COPILOT_GITHUB_TOKEN:", os.environ.get("COPILOT_GITHUB_TOKEN"))
-    print("[DEBUG] GH_TOKEN:", os.environ.get("GH_TOKEN"))
-    print("[DEBUG] GITHUB_TOKEN:", os.environ.get("GITHUB_TOKEN"))
+def main() -> int:
+    rc = _invoke_adjacent_entrypoint()
+    if rc is not None:
+        return rc
+
     try:
-        subprocess.run(
-            ["copilot", "-p", prompt, "--allow-all", "--silent", "--continue"],
-            check=False,
-            env=os.environ.copy(),
-        )
-    except FileNotFoundError:
-        print("❌ Error: 'copilot' command not found")
-        print("\nPlease install the Copilot CLI:")
-        print("  https://github.com/github-copilot/cli")
-        sys.exit(1)
+        from platformgen.cli import genny_main
+    except ImportError as exc:
+        print(f"❌ Error: could not locate the installed Genny CLI ({exc})", file=sys.stderr)
+        return 1
 
-
-def show_ui():
-    """Show GUI prompt window."""
-    import tkinter as tk
-    from tkinter import scrolledtext
-
-    root = tk.Tk()
-    root.title("Genny - Ask Copilot")
-    root.geometry("600x400")
-
-    frame = tk.Frame(root, padx=10, pady=10)
-    frame.pack(fill=tk.BOTH, expand=True)
-
-    tk.Label(frame, text="Enter your prompt for Genny:").pack(anchor="w")
-
-    text_input = scrolledtext.ScrolledText(frame, wrap=tk.WORD, height=15)
-    text_input.pack(fill=tk.BOTH, expand=True, pady=(4, 8))
-    text_input.focus()
-
-    def on_ask():
-        prompt = text_input.get("1.0", tk.END).strip()
-        if prompt:
-            root.destroy()
-            run_copilot(prompt)
-
-    def on_enter(event):
-        if event.state & 0x4:
-            on_ask()
-
-    text_input.bind("<Control-Return>", on_enter)
-
-    button_frame = tk.Frame(frame)
-    button_frame.pack(anchor="e")
-
-    tk.Label(
-        button_frame,
-        text="Tip: Ctrl+Enter to submit",
-        fg="gray",
-        font=("Arial", 9),
-    ).pack(side=tk.LEFT, padx=(0, 10))
-    tk.Button(button_frame, text="Ask Genny", command=on_ask, width=12).pack(side=tk.RIGHT)
-
-    root.mainloop()
+    genny_main()
+    return 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        run_copilot(" ".join(sys.argv[1:]))
-    else:
-        show_ui()
+    raise SystemExit(main())

@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from auger.ai.provider_sessions import copilot_pin_path, write_copilot_pinned_session_id
+from auger.utils.file_lock import acquire_file_lock, ensure_lock_file, release_file_lock
 from platformgen.runtime import state_dir
 
 
@@ -177,15 +178,15 @@ def main():
         print('\n--- End preview ---\n')
         return 0
 
-    import fcntl
     lock = runtime_dir / '.copilot.lock'
-    with open(lock, 'w') as lf:
-        fcntl.flock(lf, fcntl.LOCK_EX)
+    ensure_lock_file(lock)
+    with open(lock, 'r+') as lf:
+        acquire_file_lock(lf, blocking=True)
         try:
             out = run_copilot_prompt(prompt, env)
             print(out[:1000])
         finally:
-            fcntl.flock(lf, fcntl.LOCK_UN)
+            release_file_lock(lf)
 
     # detect new session
     time.sleep(1)

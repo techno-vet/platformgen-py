@@ -76,12 +76,6 @@ class AskGennyPanel(tk.Frame):
         self._last_prompt = ''  # original user prompt, stored for post-response footer
         
         self._auger = self._resolve_cli_path()
-        # On Windows, always use the .cmd wrapper for genny
-        if os.name == "nt" and not self._auger.lower().endswith('.cmd'):
-            bin_dir = str(state_dir() / "bin")
-            genny_cmd = os.path.join(bin_dir, "genny.cmd")
-            if os.path.exists(genny_cmd):
-                self._auger = genny_cmd
         
         # History persistence
         self._history_dir = state_dir() / "logs" / "chat_history"
@@ -128,6 +122,28 @@ class AskGennyPanel(tk.Frame):
 
     def _resolve_cli_path(self) -> str:
         cli = cli_name()
+        if os.name == "nt":
+            state_bin = state_dir() / "bin"
+            venv_scripts = state_dir() / "venv" / "Scripts"
+            exe_name = f"{cli}.exe"
+            cmd_name = f"{cli}.cmd"
+            candidates = [
+                os.environ.get("AUGER_CLI_PATH"),
+                str(Path(sys.executable).resolve().parent / exe_name),
+                str(Path(sys.executable).resolve().parent / cmd_name),
+                str(venv_scripts / exe_name),
+                str(venv_scripts / cmd_name),
+                shutil.which(exe_name),
+                shutil.which(cli),
+                str(state_bin / exe_name),
+                str(state_bin / cmd_name),
+                str(state_bin / cli),
+            ]
+            for candidate in candidates:
+                if candidate and Path(candidate).exists():
+                    return str(Path(candidate))
+            return str(venv_scripts / exe_name)
+
         candidates = [
             shutil.which(cli),
             os.environ.get("AUGER_CLI_PATH"),
@@ -1231,6 +1247,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 bufsize=1,
                 env=self._auger_env(),
             )

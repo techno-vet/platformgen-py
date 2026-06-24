@@ -1,2 +1,2 @@
 @echo off
-"%~dp0..\venv\Scripts\python.exe" "%~dp0ask-genny" %*
+"%~dp0..\venv\Scripts\genny.exe" %*

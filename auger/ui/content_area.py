@@ -1,6 +1,7 @@
 """Tabbed content area with wrapping multi-row tab bar."""
 
 import json
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
 import re
@@ -18,6 +19,20 @@ GREEN  = "#4ec9b0"
 RED    = "#f44747"
 
 _STATE_FILE = state_dir() / 'tab_state.json'
+
+
+def _safe_log(message: str) -> None:
+    """Write debug output without crashing on Windows console encodings."""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        stream = getattr(sys, "stdout", None)
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        safe = message.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        if stream is not None:
+            stream.write(safe + "\n")
+        else:
+            print(safe)
 
 def _tab_icon_for_class(widget_class, size=18):
     """Return a PhotoImage for the tab, preferring WIDGET_ICON_FUNC over WIDGET_ICON_NAME.
@@ -451,9 +466,9 @@ class ContentArea(tk.Frame):
         if tab_info and tab_info.get('frame'):
             try:
                 self.select(tab_info['frame'])
-                print(f"[✓] Restored active tab: {active_key}")
+                _safe_log(f"[OK] Restored active tab: {active_key}")
             except Exception as e:
-                print(f"[!] Could not restore active tab {active_key}: {e}")
+                _safe_log(f"[WARN] Could not restore active tab {active_key}: {e}")
         # Clear restore state so subsequent auto-opens aren't filtered
         self._restore_state = None
 
@@ -544,7 +559,7 @@ class ContentArea(tk.Frame):
                 self.add(frame, text=f"  {name}  ")
             self.select(frame)
             self._tabs[tab_key] = {'frame': frame, 'widget': widget, 'cls': widget_class}
-            print(f"✅ Opened widget: {name}")
+            _safe_log(f"[OK] Opened widget: {name}")
 
         except Exception as e:
             import traceback as _tb
@@ -555,7 +570,7 @@ class ContentArea(tk.Frame):
             self.add(frame, text=f"  ⚠ {name}  ")
             self.select(frame)
             self._tabs[tab_key] = {'frame': frame, 'widget': None, 'cls': widget_class}
-            print(f"❌ Error loading widget {name}: {e}")
+            _safe_log(f"[ERROR] Error loading widget {name}: {e}")
 
     def _build_crash_overlay(self, frame, widget_name, widget_class, error_msg, tb_str):
         """Replace widget content with a crash banner + assistant-fix button."""
@@ -715,7 +730,7 @@ class ContentArea(tk.Frame):
                     widget_class = obj
                     break
             if not widget_class:
-                print(f"⚠️  No Frame subclass found in {path.name}")
+                _safe_log(f"[WARN] No Frame subclass found in {path.name}")
                 return
 
             if hasattr(widget_class, 'WIDGET_TITLE'):
@@ -768,7 +783,7 @@ class ContentArea(tk.Frame):
                     self.after(1200, lambda f=frame, t=clean_text:
                                self._tabbar.update_tab(f, text=f"  {t}  "))
 
-                print(f"[RELOAD] Hot reloaded: {widget_class.__name__}")
+                _safe_log(f"[RELOAD] Hot reloaded: {widget_class.__name__}")
 
             else:
                 skip = getattr(widget_class, 'WIDGET_SKIP_AUTO_OPEN', False)
@@ -785,7 +800,7 @@ class ContentArea(tk.Frame):
                             label=display_name,
                             command=lambda dn=display_name, wc=widget_class:
                                 self.add_widget_tab(dn, wc))
-                        print(f"[✓] Added '{display_name}' to Widgets menu")
+                        _safe_log(f"[OK] Added '{display_name}' to Widgets menu")
                     else:
                         # Tab was closed but menu entry exists — update its lambda
                         # to point at the new (reloaded) class so next open gets
@@ -798,7 +813,7 @@ class ContentArea(tk.Frame):
                                         i,
                                         command=lambda dn=display_name, wc=widget_class:
                                             self.add_widget_tab(dn, wc))
-                                    print(f"[✓] Updated menu command for closed tab: {display_name}")
+                                    _safe_log(f"[OK] Updated menu command for closed tab: {display_name}")
                                     break
                         except Exception:
                             pass
@@ -809,12 +824,12 @@ class ContentArea(tk.Frame):
                         saved_open = rs.get('open', [])
                         if tab_key in saved_open:
                             self.add_widget_tab(display_name, widget_class)
-                            print(f"[✓] Restored widget: {display_name}")
+                            _safe_log(f"[OK] Restored widget: {display_name}")
                         else:
-                            print(f"[~] Skipped (not in last session): {display_name}")
+                            _safe_log(f"[SKIP] Skipped (not in last session): {display_name}")
                     else:
                         self.add_widget_tab(display_name, widget_class)
-                        print(f"[✓] Auto-opened widget: {display_name}")
+                        _safe_log(f"[OK] Auto-opened widget: {display_name}")
 
         except Exception as e:
-            print(f"❌ Hot reload error for {path.name}: {e}")
+            _safe_log(f"[ERROR] Hot reload error for {path.name}: {e}")
