@@ -19,6 +19,19 @@ widgets:
       - "Load credentials via python-dotenv before any API call"
     session_resume_hint: "Check ~/.auger/.env for all service tokens before making API calls"
 
+  redux:
+    title: "ReDuX"
+    purpose: "Provides a dedicated ReDuX modernization workspace with API settings and an Ask ReDuX panel for targeted modernization prompts without switching Ask Genny providers."
+    depends_on: [api_config]
+    used_by: []
+    key_data_files:
+      - "~/.auger/.env  (REDUX_API_URL, REDUX_API_KEY, REDUX_MODEL)"
+    auger_rules:
+      - "Use REDUX_API_URL and REDUX_API_KEY from API Keys+ or .env before calling ReDuX endpoints"
+      - "Prefer OpenAI-compatible /v1/models and /v1/chat/completions routes unless tenant docs require a custom path"
+      - "Keep ReDuX interactions inside this widget so Ask Genny provider state remains stable"
+    session_resume_hint: "Load REDUX_API_URL/REDUX_API_KEY and verify API test before Ask ReDuX calls"
+
   gchat:
     title: "Google Chat"
     purpose: "Posts messages and @mentions to Google Chat spaces via webhooks. Two scopes: SYSTEM (shared, git-committed) and PERSONAL (user ~/.auger/.env)."
