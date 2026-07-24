@@ -17,15 +17,51 @@ DAEMON_PORT="${PLATFORMGEN_DAEMON_PORT:-${AUGER_DAEMON_PORT:-7438}}"
 mkdir -p "$STATE_DIR"
 
 DISPLAY_VAL="${DISPLAY:-}"
-if [ -z "$DISPLAY_VAL" ]; then
-    if [ -S /tmp/.X11-unix/X1 ]; then
-        DISPLAY_VAL=":1"
-    elif [ -S /tmp/.X11-unix/X0 ]; then
-        DISPLAY_VAL=":0"
-    else
-        DISPLAY_VAL=":0"
+_display_socket_exists() {
+    case "$1" in
+        :[0-9]*)
+            _dnum="${1#:}"
+            _dnum="${_dnum%%.*}"
+            [ -S "/tmp/.X11-unix/X${_dnum}" ]
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_display_is_live() {
+    _candidate="$1"
+    if ! _display_socket_exists "$_candidate"; then
+        return 1
     fi
+    if command -v xset >/dev/null 2>&1; then
+        DISPLAY="$_candidate" xset -q >/dev/null 2>&1
+        return $?
+    fi
+    return 0
+}
+
+if [ -n "$DISPLAY_VAL" ] && ! _display_is_live "$DISPLAY_VAL"; then
+    DISPLAY_VAL=""
 fi
+if [ -z "$DISPLAY_VAL" ]; then
+    for _candidate in :1 :0; do
+        if _display_is_live "$_candidate"; then
+            DISPLAY_VAL="$_candidate"
+            break
+        fi
+    done
+fi
+if [ -z "$DISPLAY_VAL" ]; then
+    for _candidate in :1 :0; do
+        if _display_socket_exists "$_candidate"; then
+            DISPLAY_VAL="$_candidate"
+            break
+        fi
+    done
+fi
+[ -z "$DISPLAY_VAL" ] && DISPLAY_VAL=":0"
 
 if [ -f "$DAEMON_SCRIPT" ] && ! curl -sf --noproxy localhost "http://localhost:${DAEMON_PORT}/health" >/dev/null 2>&1; then
     OLD_DAEMON=$(lsof -ti "tcp:${DAEMON_PORT}" 2>/dev/null | head -1 || true)

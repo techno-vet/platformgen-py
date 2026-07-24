@@ -96,6 +96,25 @@ def _find_bin(*names):
     return ''
 
 
+def _display_socket_exists(display: str) -> bool:
+    if not display or not display.startswith(':'):
+        return False
+    display_num = display[1:].split('.', 1)[0]
+    if not display_num.isdigit():
+        return False
+    return Path(f'/tmp/.X11-unix/X{display_num}').exists()
+
+
+def _detect_display() -> str:
+    current = (os.environ.get('DISPLAY') or '').strip()
+    if current and _display_socket_exists(current):
+        return current
+    for candidate in (':1', ':0'):
+        if _display_socket_exists(candidate):
+            return candidate
+    return current or ':0'
+
+
 def _repo_candidates() -> list[Path]:
     candidates = [REPO_DIR, Path.cwd()]
     seen: set[Path] = set()
@@ -884,7 +903,7 @@ def stream_restart_auger(cmd: dict, write_line):
         return
 
     import os, time, re as _re
-    display = os.environ.get('DISPLAY', ':0')
+    display = _detect_display()
     container = (
         os.environ.get('PLATFORMGEN_CONTAINER_NAME')
         or os.environ.get('AUGER_CONTAINER_NAME')
@@ -1005,7 +1024,7 @@ def stream_restart_auger(cmd: dict, write_line):
             '-e', f'HTTP_PROXY={proxy}',
             '-e', f'HTTPS_PROXY={proxy}',
             _image,
-            'sh', '-lc', 'python3 -m platformgen start || auger start',
+            'sh', '-lc', 'python3 -m platformgen start || python3 -m auger start || auger start',
         ]
 
         result = subprocess.run(run_cmd, capture_output=True, text=True)
@@ -1972,10 +1991,7 @@ def handle_launch_wizard(cmd: dict) -> dict:
     try:
         env = os.environ.copy()
         # Ensure DISPLAY is set — fall back to :0 / :1 if not inherited
-        if 'DISPLAY' not in env or not env['DISPLAY']:
-            for d in (':1', ':0'):
-                env['DISPLAY'] = d
-                break
+        env['DISPLAY'] = _detect_display()
         subprocess.Popen(
             [sys.executable, str(wizard_path)],
             start_new_session=True, env=env,

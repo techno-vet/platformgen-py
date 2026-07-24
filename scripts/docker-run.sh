@@ -242,7 +242,7 @@ echo "[OK] Container started, launching UI..."
 docker exec -d -u "$HOST_UID:$HOST_GID" \
     -e DISPLAY="${DISPLAY:-:1}" \
     -e PYTHONPATH="/home/auger/.auger/pypackages" \
-    "$CONTAINER_NAME" sh -lc 'python3 -m platformgen start || auger start'
+    "$CONTAINER_NAME" sh -lc 'python3 -m platformgen start || python3 -m auger start || auger start'
 
 echo "🖥️  PlatformGen UI is running. Close this terminal freely."
 echo "   Daemon log: $AUGER_DIR/daemon.log"

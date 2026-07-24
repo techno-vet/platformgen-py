@@ -113,6 +113,25 @@ HOST_PROCESS_PATTERNS = (
     f"{CLI_NAME} start",
 )
 
+
+def _display_socket_exists(display: str) -> bool:
+    if not display or not display.startswith(":"):
+        return False
+    display_num = display[1:].split(".", 1)[0]
+    if not display_num.isdigit():
+        return False
+    return Path(f"/tmp/.X11-unix/X{display_num}").exists()
+
+
+def _resolve_display() -> str:
+    env_display = os.environ.get("DISPLAY", "").strip()
+    if env_display and _display_socket_exists(env_display):
+        return env_display
+    for candidate in (":1", ":0"):
+        if _display_socket_exists(candidate):
+            return candidate
+    return env_display or ":0"
+
 # Image used for update checks.  Override via env var for local dev.
 IMAGE = os.environ.get(
     "PLATFORMGEN_IMAGE",
@@ -328,16 +347,18 @@ def _stop_host_platform_processes() -> None:
 
 def _activate_existing_platform() -> bool:
     try:
+        display = _resolve_display()
         r = subprocess.run(
             [
                 "docker",
                 "exec",
                 "-d",
                 "-e",
-                f"DISPLAY={os.environ.get('DISPLAY', ':1')}",
+                f"DISPLAY={display}",
                 CONTAINER_NAME,
-                "auger",
-                "start",
+                "sh",
+                "-lc",
+                "python3 -m platformgen start || python3 -m auger start || auger start",
             ],
             capture_output=True,
             text=True,

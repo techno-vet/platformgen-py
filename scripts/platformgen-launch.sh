@@ -59,19 +59,48 @@ progress_error() {
 }
 
 detect_display() {
-    if [ -n "${DISPLAY:-}" ]; then
+    _display_socket_exists() {
+        case "$1" in
+            :[0-9]*)
+                _dnum="${1#:}"
+                _dnum="${_dnum%%.*}"
+                [ -S "/tmp/.X11-unix/X${_dnum}" ]
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    _display_is_live() {
+        _candidate="$1"
+        if ! _display_socket_exists "$_candidate"; then
+            return 1
+        fi
+        if command -v xset >/dev/null 2>&1; then
+            DISPLAY="$_candidate" xset -q >/dev/null 2>&1
+            return $?
+        fi
+        return 0
+    }
+
+    if [ -n "${DISPLAY:-}" ] && _display_is_live "$DISPLAY"; then
         printf '%s\n' "$DISPLAY"
         return 0
     fi
-    if [ -S /tmp/.X11-unix/X1 ]; then
-        printf ':1\n'
-        return 0
-    fi
-    if [ -S /tmp/.X11-unix/X0 ]; then
-        printf ':0\n'
-        return 0
-    fi
-    printf ':0\n'
+    for _candidate in :1 :0; do
+        if _display_is_live "$_candidate"; then
+            printf '%s\n' "$_candidate"
+            return 0
+        fi
+    done
+    for _candidate in :1 :0; do
+        if _display_socket_exists "$_candidate"; then
+            printf '%s\n' "$_candidate"
+            return 0
+        fi
+    done
+    printf '%s\n' "${DISPLAY:-:0}"
 }
 
 docker_usable() {
@@ -186,7 +215,7 @@ install_cli_wrappers() {
         target="$user_bin/$wrapper"
         cat > "$target" <<EOF
 #!/bin/bash
-exec "$venv_python" -m auger.cli "\$@"
+exec "$venv_python" -m platformgen.cli "\$@"
 EOF
         chmod +x "$target"
     done
@@ -347,6 +376,13 @@ PY
         exit 0
     fi
 
+    # Ensure local package imports resolve even if editable-install metadata is stale.
+    if [ -z "${PYTHONPATH:-}" ]; then
+        export PYTHONPATH="$REPO_DIR"
+    else
+        export PYTHONPATH="$REPO_DIR:$PYTHONPATH"
+    fi
+
     # Load .env tokens into environment
     if [ -f "$AUGER_DIR/.env" ]; then
         set -a
@@ -373,7 +409,7 @@ PY
     # Start host tools daemon if not already running
     if ! curl -sf "http://localhost:${DAEMON_PORT}/health" >/dev/null 2>&1; then
         echo "[SETUP]  Starting host tools daemon..."
-        nohup env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" "$VENV_DIR/bin/python3" "$SCRIPT_DIR/host_tools_daemon.py" \
+        nohup env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" PYTHONPATH="$PYTHONPATH" "$VENV_DIR/bin/python3" "$SCRIPT_DIR/host_tools_daemon.py" \
             > "$AUGER_DIR/daemon.log" 2>&1 &
         DAEMON_PID=$!
         echo "$DAEMON_PID" > "$AUGER_DIR/daemon.pid"
@@ -406,7 +442,7 @@ PY
         fi
 
         echo "[START]  Starting PlatformGen (venv mode) in the background..."
-        nohup env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start --config-dir "$AUGER_DIR" \
+        nohup env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" PYTHONPATH="$PYTHONPATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start --config-dir "$AUGER_DIR" \
             >> "$VENV_LOG_FILE" 2>&1 &
         _venv_pid=$!
         echo "$_venv_pid" > "$VENV_PID_FILE"
@@ -427,7 +463,7 @@ PY
     echo "   To stop: Ctrl+C or close the window."
     echo ""
 
-    exec env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start --config-dir "$AUGER_DIR"
+    exec env PLATFORMGEN_HOME="$AUGER_DIR" AUGER_HOME="$AUGER_DIR" AUGER_MODE=venv DISPLAY="$DISPLAY_VAL" PATH="$PATH" PYTHONPATH="$PYTHONPATH" AUGER_VENV_BIN="$AUGER_VENV_BIN" "$VENV_DIR/bin/python3" -m platformgen start --config-dir "$AUGER_DIR"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -443,7 +479,7 @@ fi
 if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
     DISPLAY_VAL="$(detect_display)"
     echo "[OK]  PlatformGen container already running — opening the existing platform window..."
-    if docker exec -d -e DISPLAY="$DISPLAY_VAL" "$CONTAINER" sh -lc 'python3 -m platformgen start || auger start' >/dev/null 2>&1; then
+    if docker exec -d -e DISPLAY="$DISPLAY_VAL" "$CONTAINER" sh -lc 'python3 -m platformgen start || python3 -m auger start || auger start' >/dev/null 2>&1; then
         exit 0
     fi
     echo "[WARN]   Could not activate the existing PlatformGen UI — continuing with full startup path."
@@ -856,7 +892,7 @@ if ! docker run -d \
     ${PROXY_ARGS} \
     ${DNS_ARGS} \
     "$PERSONALIZED_IMAGE" \
-    sh -lc 'python3 -m platformgen start || auger start' 2>&1 | tee -a "$PROGRESS_LOG"; then
+    sh -lc 'python3 -m platformgen start || python3 -m auger start || auger start' 2>&1 | tee -a "$PROGRESS_LOG"; then
     progress_error "Failed to launch PlatformGen container."
     exit 1
 fi

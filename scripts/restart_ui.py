@@ -26,7 +26,13 @@ for line in os.popen('ps aux').readlines():
 
 log_path = state_dir() / 'ui.log'
 env = dict(os.environ)
-env.setdefault('DISPLAY', ':1')
+if not env.get('DISPLAY'):
+    for candidate in (':1', ':0'):
+        display_num = candidate[1:]
+        if os.path.exists(f'/tmp/.X11-unix/X{display_num}'):
+            env['DISPLAY'] = candidate
+            break
+env.setdefault('DISPLAY', ':0')
 log_path.parent.mkdir(parents=True, exist_ok=True)
 log = open(log_path, 'a')
 p = subprocess.Popen(
