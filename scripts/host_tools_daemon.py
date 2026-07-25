@@ -1636,15 +1636,21 @@ def stream_ask_copilot(cmd: dict, write_line):
                 try:
                     session_state_dir = _copilot_session_state_dir(provider, env)
                     if session_state_dir.exists():
-                        dirs = sorted(
-                            (e for e in session_state_dir.iterdir() if e.is_dir()),
-                            key=lambda p: p.stat().st_mtime,
-                            reverse=True,
-                        )
-                        if dirs:
-                            actual_session_id = dirs[0].name
-                            if session_mode == 'pinned':
-                                write_copilot_pinned_session_id(selected_model, dirs[0].name, provider=provider)
+                        # Only fall back to most recent directory if the specified session
+                        # doesn't exist (e.g., --continue mode with no explicit session_id).
+                        # After auto-rotate, we explicitly provide a session_id and copilot
+                        # creates that session, so we trust the id we provided.
+                        specified_session_path = session_state_dir / session_id if session_id else None
+                        if not (specified_session_path and specified_session_path.exists()):
+                            dirs = sorted(
+                                (e for e in session_state_dir.iterdir() if e.is_dir()),
+                                key=lambda p: p.stat().st_mtime,
+                                reverse=True,
+                            )
+                            if dirs:
+                                actual_session_id = dirs[0].name
+                        if session_mode == 'pinned':
+                            write_copilot_pinned_session_id(selected_model, actual_session_id, provider=provider)
                 except Exception:
                     pass
 
