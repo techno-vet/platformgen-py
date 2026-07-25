@@ -36,6 +36,8 @@ from auger.ai.providers import (
     seeded_models,
 )
 from .markdown_widget import MarkdownWidget
+from .markdown_widget_with_reasoning import MarkdownWidgetWithReasoning
+from .reasoning_animator import TokenCounter
 from platformgen.runtime import assistant_name, cli_name, daemon_url, product_name, state_dir
 
 try:
@@ -1136,9 +1138,12 @@ class AskGennyPanel(tk.Frame):
         scrollbar = ttk.Scrollbar(response_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.response = MarkdownWidget(response_frame, yscrollcommand=scrollbar.set)
+        self.response = MarkdownWidgetWithReasoning(response_frame, yscrollcommand=scrollbar.set)
         self.response.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.response.yview)
+        
+        # Initialize token counter for header
+        self._token_counter = TokenCounter(self.status_label)
         self._refresh_model_selector()
         self._refresh_session_selector()
     
@@ -1393,7 +1398,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                         msg = entry.get('message', '')
                         if msg_type == 'output' and msg:
                             response_lines.append(msg)
-                            self._queue.put(('line', msg + '\n'))
+                            self._queue.put(('line', msg))
                         elif msg_type == 'chunk' and msg:
                             response_lines.append(msg)
                             self._queue.put(('chunk', msg))
@@ -1521,7 +1526,17 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 msg_type, data = self._queue.get_nowait()
                 
                 if msg_type == 'line':
-                    self.response.append_markdown(data)
+                    # Check for reasoning blocks in the response
+                    has_reasoning, remaining, reasoning_blocks = self._detect_and_parse_reasoning(data)
+                    
+                    # Display reasoning blocks with special styling
+                    for block in reasoning_blocks:
+                        self.response.append_reasoning(block['title'], block['content'])
+                    
+                    # Display remaining response text
+                    if remaining:
+                        self.response.append_markdown(remaining)
+                    
                     self._track_live_response_chunk(data)
 
                 elif msg_type == 'chunk':
@@ -1910,6 +1925,56 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                 f.write(json.dumps(entry) + '\n')
         except Exception as e:
             print(f"Failed to save history: {e}")
+    
+    def _detect_and_parse_reasoning(self, text: str) -> tuple:
+        """Detect and parse reasoning blocks from response text.
+        
+        Returns:
+            (has_reasoning, remaining_text, reasoning_blocks)
+            where reasoning_blocks = [{'title': str, 'content': str}, ...]
+        """
+        reasoning_blocks = []
+        remaining = text
+        
+        # Detect common reasoning markers from Claude/Copilot
+        reasoning_markers = [
+            '<antithinking>',  # Claude 3.7+ thinking tag
+            '<think>',         # Some models use this
+            '**Thinking:**',   # Markdown-style thinking
+            '**Reasoning:**',  # Alt reasoning marker
+        ]
+        
+        closing_markers = {
+            '<antithinking>': '</antithinking>',
+            '<think>': '</think>',
+            '**Thinking:**': '\n\n',  # paragraph break
+            '**Reasoning:**': '\n\n',
+        }
+        
+        # Simple parser: look for markers
+        for marker in reasoning_markers:
+            if marker in text:
+                start_idx = text.find(marker)
+                if start_idx >= 0:
+                    closing = closing_markers.get(marker, '\n\n')
+                    end_idx = text.find(closing, start_idx + len(marker))
+                    
+                    if end_idx > start_idx:
+                        reasoning_content = text[start_idx + len(marker):end_idx].strip()
+                        
+                        # Extract reasoning block
+                        if reasoning_content:
+                            title = marker.replace('**', '').replace('<', '').replace('>', '').strip()
+                            reasoning_blocks.append({
+                                'title': title or 'Reasoning',
+                                'content': reasoning_content
+                            })
+                            
+                            # Remove from remaining text
+                            remaining = text[:start_idx] + text[end_idx + len(closing):]
+                            break  # Process one block per chunk
+        
+        return len(reasoning_blocks) > 0, remaining.strip(), reasoning_blocks
 
     def _append_status_note(self, note, kind='info'):
         """Persist a restart-safe work-status note shown on the next launch."""
