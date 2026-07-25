@@ -10,17 +10,20 @@ from dotenv import dotenv_values
 from platformgen.runtime import state_dir
 
 PROVIDER_COPILOT = "copilot"
+PROVIDER_GAB = "gab"
 PROVIDER_OPENAI = "openai"
 PROVIDER_OLLAMA = "ollama"
 
 PROVIDER_ORDER = (
     PROVIDER_COPILOT,
+    PROVIDER_GAB,
     PROVIDER_OPENAI,
     PROVIDER_OLLAMA,
 )
 
 PROVIDER_LABELS = {
     PROVIDER_COPILOT: "GitHub Copilot",
+    PROVIDER_GAB: "Gab.ai",
     PROVIDER_OPENAI: "OpenAI",
     PROVIDER_OLLAMA: "Ollama",
 }
@@ -61,14 +64,24 @@ OLLAMA_FALLBACK_MODELS = (
     "llama3.2",
 )
 
+GAB_FALLBACK_MODELS = (
+    "arya",
+)
+
 
 def load_runtime_env(base: dict | None = None) -> dict:
     env = dict(base or os.environ)
     env_file = state_dir() / ".env"
     if env_file.exists():
         for key, value in dotenv_values(env_file).items():
-            if value is not None:
-                env.setdefault(key, value)
+            if value is None:
+                continue
+            file_value = str(value).strip()
+            if not file_value:
+                continue
+            current = str(env.get(key) or "").strip()
+            if not current:
+                env[key] = file_value
     return env
 
 
@@ -83,7 +96,7 @@ def provider_label(provider: str | None) -> str:
 
 
 def provider_supports_copilot_sessions(provider: str | None) -> bool:
-    return normalize_provider(provider) == PROVIDER_COPILOT
+    return normalize_provider(provider) in {PROVIDER_COPILOT, PROVIDER_GAB}
 
 
 def default_model(provider: str | None, env: dict | None = None) -> str:
@@ -91,6 +104,9 @@ def default_model(provider: str | None, env: dict | None = None) -> str:
     env = load_runtime_env(env)
     if provider == PROVIDER_COPILOT:
         return "auto"
+    if provider == PROVIDER_GAB:
+        configured = str(env.get("GAB_MODEL") or "").strip()
+        return configured or GAB_FALLBACK_MODELS[0]
     if provider == PROVIDER_OPENAI:
         configured = str(env.get("OPENAI_DEFAULT_MODEL") or "").strip()
         return configured or OPENAI_MODEL_OPTIONS[0]
@@ -112,6 +128,16 @@ def openai_base_url(env: dict | None = None) -> str:
 def ollama_base_url(env: dict | None = None) -> str:
     env = load_runtime_env(env)
     return str(env.get("OLLAMA_BASE_URL") or env.get("OLLAMA_BASE") or "http://localhost:11434").rstrip("/")
+
+
+def gab_base_url(env: dict | None = None) -> str:
+    env = load_runtime_env(env)
+    base = str(env.get("GAB_BASE_URL") or "https://gab.ai/v1").rstrip("/")
+    if base.endswith("/api/v1") or base.endswith("/v1"):
+        return base
+    if base.endswith("/api"):
+        return f"{base}/v1"
+    return f"{base}/v1"
 
 
 def _http_json(url: str, *, headers: dict | None = None, timeout: int = 5) -> dict:
@@ -157,11 +183,45 @@ def _ollama_live_models(env: dict | None = None) -> list[str]:
     return models
 
 
+def _gab_live_models(env: dict | None = None) -> list[str]:
+    env = load_runtime_env(env)
+    api_key = str(env.get("GAB_API_KEY") or "").strip()
+    if not api_key:
+        return []
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    try:
+        payload = _http_json(f"{gab_base_url(env)}/models", headers=headers, timeout=6)
+    except Exception:
+        return []
+    models = []
+    for entry in payload.get("data", []):
+        model_id = str(entry.get("id") or "").strip()
+        if model_id:
+            models.append(model_id)
+    return sorted(set(models))
+
+
 def available_models(provider: str | None, env: dict | None = None) -> list[str]:
     provider = normalize_provider(provider)
     env = load_runtime_env(env)
     if provider == PROVIDER_COPILOT:
         return list(COPILOT_MODEL_OPTIONS)
+    if provider == PROVIDER_GAB:
+        live = _gab_live_models(env)
+        ordered = []
+        configured = str(env.get("GAB_MODEL") or "").strip()
+        if configured:
+            ordered.append(configured)
+        for model in live:
+            if model not in ordered:
+                ordered.append(model)
+        for model in GAB_FALLBACK_MODELS:
+            if model not in ordered:
+                ordered.append(model)
+        return ordered
     if provider == PROVIDER_OPENAI:
         live = _openai_live_models(env)
         ordered = list(OPENAI_MODEL_OPTIONS)
@@ -188,6 +248,13 @@ def seeded_models(provider: str | None, env: dict | None = None) -> list[str]:
     env = load_runtime_env(env)
     if provider == PROVIDER_COPILOT:
         return list(COPILOT_MODEL_OPTIONS)
+    if provider == PROVIDER_GAB:
+        configured = str(env.get("GAB_MODEL") or "").strip()
+        ordered = [configured] if configured else []
+        for model in GAB_FALLBACK_MODELS:
+            if model not in ordered:
+                ordered.append(model)
+        return ordered
     if provider == PROVIDER_OPENAI:
         ordered = list(OPENAI_MODEL_OPTIONS)
         configured = str(env.get("OPENAI_DEFAULT_MODEL") or "").strip()

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from platformgen.runtime import state_dir
 
+from .providers import PROVIDER_COPILOT, normalize_provider
+
 _ROOT = state_dir() / "provider_sessions"
 _SESSION_DIR = _ROOT / "sessions"
 _PINNED_FILE = _ROOT / "pinned.json"
@@ -58,19 +60,21 @@ def _write_pinned_map(payload: dict[str, str]):
     _write_json(_PINNED_FILE, dict(sorted(payload.items())))
 
 
-def copilot_pin_path(model: str) -> Path:
+def copilot_pin_path(model: str, provider: str = PROVIDER_COPILOT) -> Path:
     _ensure_dirs()
-    return _COPILOT_PIN_DIR / f"{_slug(model)}.txt"
+    provider_slug = _slug(normalize_provider(provider))
+    return _COPILOT_PIN_DIR / f"{provider_slug}-{_slug(model)}.txt"
 
 
-def read_copilot_pinned_session_id(model: str) -> str:
-    path = copilot_pin_path(model)
+def read_copilot_pinned_session_id(model: str, provider: str = PROVIDER_COPILOT) -> str:
+    provider = normalize_provider(provider)
+    path = copilot_pin_path(model, provider)
     if path.exists():
         try:
             return path.read_text(encoding="utf-8").strip()
         except Exception:
             return ""
-    if _slug(model) == "auto" and _LEGACY_COPILOT_PIN.exists():
+    if provider == PROVIDER_COPILOT and _slug(model) == "auto" and _LEGACY_COPILOT_PIN.exists():
         try:
             return _LEGACY_COPILOT_PIN.read_text(encoding="utf-8").strip()
         except Exception:
@@ -78,25 +82,42 @@ def read_copilot_pinned_session_id(model: str) -> str:
     return ""
 
 
-def write_copilot_pinned_session_id(model: str, session_id: str):
+def write_copilot_pinned_session_id(model: str, session_id: str, provider: str = PROVIDER_COPILOT):
+    provider = normalize_provider(provider)
     session_id = str(session_id or "").strip()
-    path = copilot_pin_path(model)
+    path = copilot_pin_path(model, provider)
     if session_id:
         path.write_text(session_id, encoding="utf-8")
-        if _slug(model) == "auto":
+        if provider == PROVIDER_COPILOT and _slug(model) == "auto":
             _LEGACY_COPILOT_PIN.write_text(session_id, encoding="utf-8")
     else:
-        clear_copilot_pinned_session_id(model)
+        clear_copilot_pinned_session_id(model, provider)
 
 
-def clear_copilot_pinned_session_id(model: str):
-    for path in (copilot_pin_path(model), _LEGACY_COPILOT_PIN if _slug(model) == "auto" else None):
+def clear_copilot_pinned_session_id(model: str, provider: str = PROVIDER_COPILOT):
+    provider = normalize_provider(provider)
+    for path in (
+        copilot_pin_path(model, provider),
+        _LEGACY_COPILOT_PIN if provider == PROVIDER_COPILOT and _slug(model) == "auto" else None,
+    ):
         if path is None:
             continue
         try:
             path.unlink()
         except FileNotFoundError:
             pass
+
+
+def session_turn_count(session_id: str) -> int:
+    payload = get_local_session(session_id)
+    messages = payload.get("messages", [])
+    if not isinstance(messages, list):
+        return 0
+    count = 0
+    for item in messages:
+        if str(item.get("role") or "").strip() == "user" and str(item.get("content") or "").strip():
+            count += 1
+    return count
 
 
 def get_local_session(session_id: str) -> dict:

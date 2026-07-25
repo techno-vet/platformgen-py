@@ -32,6 +32,7 @@ import signal
 import urllib.error
 import urllib.request
 from pathlib import Path
+import sqlite3
 
 from auger.ai.provider_sessions import (
     append_local_turn,
@@ -41,15 +42,18 @@ from auger.ai.provider_sessions import (
     ensure_local_session,
     read_copilot_pinned_session_id,
     read_local_pinned_session_id,
+    session_turn_count,
     session_messages,
     write_copilot_pinned_session_id,
 )
 from auger.ai.providers import (
     PROVIDER_COPILOT,
+    PROVIDER_GAB,
     PROVIDER_OLLAMA,
     PROVIDER_OPENAI,
     available_models,
     default_model,
+    gab_base_url,
     load_runtime_env,
     normalize_model,
     normalize_provider,
@@ -113,6 +117,47 @@ def _detect_display() -> str:
         if _display_socket_exists(candidate):
             return candidate
     return current or ':0'
+
+
+def _copilot_home_for_provider(provider: str, env: dict | None = None) -> Path:
+    provider = normalize_provider(provider)
+    if provider == PROVIDER_GAB:
+        path = AUGER_DIR / 'copilot-homes' / 'gab'
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    env = env or os.environ
+    explicit = str(env.get('COPILOT_HOME') or '').strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    return Path.home() / '.copilot'
+
+
+def _copilot_session_state_dir(provider: str, env: dict | None = None) -> Path:
+    return _copilot_home_for_provider(provider, env) / 'session-state'
+
+
+def _copilot_session_turn_count(provider: str, session_id: str, env: dict | None = None) -> int:
+    session_id = str(session_id or '').strip()
+    if not session_id:
+        return 0
+    events_path = _copilot_session_state_dir(provider, env) / session_id / 'events.jsonl'
+    if not events_path.exists():
+        return 0
+    turns = 0
+    try:
+        with open(events_path, 'r', encoding='utf-8', errors='ignore') as fh:
+            for raw in fh:
+                if '"type"' not in raw:
+                    continue
+                try:
+                    evt = json.loads(raw)
+                except Exception:
+                    continue
+                if str(evt.get('type') or '').strip().lower() == 'user.message':
+                    turns += 1
+    except Exception:
+        return 0
+    return turns
 
 
 def _repo_candidates() -> list[Path]:
@@ -1206,6 +1251,67 @@ def _build_context_preamble() -> str:
         return ''
 
 
+def _task_context_for_prompt(user_prompt: str) -> str:
+    """Inject exact Tasks-widget rows when user asks for specific task IDs.
+
+    This closes a gap for BYOK providers that cannot query local tools directly.
+    """
+    prompt = str(user_prompt or '').strip()
+    if not prompt:
+        return ''
+    ids: list[int] = []
+    seen: set[int] = set()
+    for match in re.finditer(r'(?:task\s*#?\s*|#)(\d{1,6})\b', prompt, flags=re.IGNORECASE):
+        try:
+            task_id = int(match.group(1))
+        except Exception:
+            continue
+        if task_id not in seen:
+            seen.add(task_id)
+            ids.append(task_id)
+    if not ids:
+        return ''
+
+    db_path = AUGER_DIR / 'tasks.db'
+    if not db_path.exists():
+        return ''
+
+    rows: list[tuple] = []
+    try:
+        with sqlite3.connect(str(db_path)) as conn:
+            for task_id in ids[:12]:
+                row = conn.execute(
+                    "SELECT id,title,description,status,priority,category,updated_at "
+                    "FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if row:
+                    rows.append(row)
+    except Exception:
+        return ''
+
+    if not rows:
+        missing = ', '.join(f'#{task_id}' for task_id in ids[:12])
+        return (
+            "[TASKS WIDGET CONTEXT]\n"
+            f"Requested task IDs not found in local tasks.db: {missing}\n"
+            "[END TASKS WIDGET CONTEXT]\n\n"
+        )
+
+    lines = ["[TASKS WIDGET CONTEXT]"]
+    for task_id, title, description, status, priority, category, updated_at in rows:
+        desc = str(description or '').strip().replace('\n', ' ')
+        if len(desc) > 500:
+            desc = desc[:497].rstrip() + '...'
+        lines.append(
+            f"- Task #{task_id}: {title}\n"
+            f"  status={status or ''} priority={priority or ''} category={category or ''} updated_at={updated_at or ''}\n"
+            f"  description={desc}"
+        )
+    lines.append("[END TASKS WIDGET CONTEXT]")
+    return '\n'.join(lines) + '\n\n'
+
+
 
 # ── Ask Copilot streaming action ──────────────────────────────────────────────
 
@@ -1221,17 +1327,10 @@ def stream_ask_copilot(cmd: dict, write_line):
         write_line({'type': 'error', 'message': 'No prompt provided'})
         return
 
+    provider = normalize_provider(cmd.get('provider'))
+
     # Build env, loading the runtime .env file
-    env = os.environ.copy()
-    env_file = AUGER_DIR / '.env'
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                k, _, v = line.partition('=')
-                k, v = k.strip(), v.strip().strip('"').strip("'")
-                if v and k not in env:
-                    env[k] = v
+    env = load_runtime_env(os.environ.copy())
     token = (env.get('COPILOT_GITHUB_TOKEN') or env.get('GH_TOKEN') or
              env.get('GITHUB_TOKEN') or env.get('GITHUB_COPILOT_TOKEN'))
     if token:
@@ -1239,10 +1338,13 @@ def stream_ask_copilot(cmd: dict, write_line):
         env['GH_TOKEN'] = token
         env['GITHUB_TOKEN'] = token
 
-    selected_model = str(cmd.get('model') or 'auto').strip() or 'auto'
-    session_id_file = copilot_pin_path(selected_model)
-    pinned_session_id = read_copilot_pinned_session_id(selected_model) or None
-    model_args = ['--model', selected_model] if selected_model.lower() != 'auto' else []
+    selected_model = normalize_model(provider, cmd.get('model'), env)
+    pinned_session_id = read_copilot_pinned_session_id(selected_model, provider=provider) or None
+    # BYOK/OpenAI-compatible lanes can reject --model flag aliasing even when the
+    # underlying wire model works. For Gab, route model via env only.
+    model_args = [] if provider == PROVIDER_GAB else (
+        ['--model', selected_model] if selected_model.lower() != 'auto' else []
+    )
 
     session_target = cmd.get('session_target', {})
     if not isinstance(session_target, dict):
@@ -1252,13 +1354,49 @@ def stream_ask_copilot(cmd: dict, write_line):
     requested_session_name = str(session_target.get('name') or '').strip()
     name_args = ['--name', requested_session_name] if requested_session_name else []
 
+    auto_rotate = cmd.get('auto_rotate', {})
+    if not isinstance(auto_rotate, dict):
+        auto_rotate = {}
+    auto_rotate_enabled = bool(auto_rotate.get('enabled', False))
+    try:
+        auto_rotate_max_turns = int(auto_rotate.get('max_turns') or 100)
+    except Exception:
+        auto_rotate_max_turns = 100
+    auto_rotate_max_turns = max(10, min(auto_rotate_max_turns, 2000))
+    context_bridge = str(cmd.get('context_bridge') or '').strip()
+    context_bridge_reason = str(cmd.get('context_bridge_reason') or '').strip()
+
+    if provider == PROVIDER_GAB:
+        gab_wire_model = selected_model
+        gab_key = str(env.get('GAB_API_KEY') or '').strip()
+        if not gab_key:
+            write_line({'type': 'error', 'message': 'Gab.ai API key is not configured in API Keys+ (GAB_API_KEY)'})
+            return
+        env['COPILOT_HOME'] = str(_copilot_home_for_provider(provider, env))
+        env['COPILOT_PROVIDER_BASE_URL'] = gab_base_url(env)
+        env['COPILOT_PROVIDER_TYPE'] = 'openai'
+        env['COPILOT_PROVIDER_BEARER_TOKEN'] = gab_key
+        env['COPILOT_MODEL'] = gab_wire_model
+        env['COPILOT_PROVIDER_WIRE_MODEL'] = gab_wire_model
+        env['COPILOT_ALLOW_ALL'] = 'true'
+    else:
+        for key in (
+            'COPILOT_PROVIDER_BASE_URL',
+            'COPILOT_PROVIDER_TYPE',
+            'COPILOT_PROVIDER_BEARER_TOKEN',
+            'COPILOT_MODEL',
+            'COPILOT_PROVIDER_WIRE_MODEL',
+            'COPILOT_ALLOW_ALL',
+        ):
+            env.pop(key, None)
+
     def _session_is_corrupt(candidate_id: str) -> bool:
         if not candidate_id:
             return False
         try:
             import json as _json_health
 
-            events_path = Path.home() / '.copilot' / 'session-state' / candidate_id / 'events.jsonl'
+            events_path = _copilot_session_state_dir(provider, env) / candidate_id / 'events.jsonl'
             if not events_path.exists():
                 return False
             try:
@@ -1297,9 +1435,21 @@ def stream_ask_copilot(cmd: dict, write_line):
         session_id = pinned_session_id
         session_args = ['--resume', session_id] if session_id else ['--continue']
 
+    pre_request_turn_count = _copilot_session_turn_count(provider, session_id, env) if session_id else 0
+    rotated_for_turn_limit = False
+    if auto_rotate_enabled and session_mode != 'new' and session_id and pre_request_turn_count >= auto_rotate_max_turns:
+        rotated_for_turn_limit = True
+        session_mode = 'new'
+        session_id = str(uuid.uuid4())
+        session_args = [f'--session-id={session_id}']
+        write_line({
+            'type': 'progress',
+            'message': f'[INFO] Auto-rotating session at {pre_request_turn_count} turns (threshold {auto_rotate_max_turns})',
+        })
+
     if session_mode == 'pinned' and session_id and _session_is_corrupt(session_id):
         try:
-            clear_copilot_pinned_session_id(selected_model)
+            clear_copilot_pinned_session_id(selected_model, provider=provider)
         except Exception:
             pass
         session_id = None
@@ -1323,7 +1473,16 @@ def stream_ask_copilot(cmd: dict, write_line):
 
     # Layer 2: inject session snapshot preamble before every copilot call
     _preamble = _build_context_preamble()
-    _enriched_prompt = _preamble + prompt if _preamble else prompt
+    _bridge = ''
+    if context_bridge and (context_bridge_reason or rotated_for_turn_limit):
+        reason_label = context_bridge_reason or 'auto_rotate'
+        _bridge = (
+            f"[CONTEXT BRIDGE — {reason_label}]\n"
+            f"{context_bridge}\n"
+            "[END CONTEXT BRIDGE]\n\n"
+        )
+    _task_context = _task_context_for_prompt(prompt)
+    _enriched_prompt = (_preamble or '') + _bridge + (_task_context or '') + prompt
 
     write_line({'type': 'progress', 'message': '⏳ Acquiring session lock...'})
     # Ensure lock file is world-writable (0o666) so both host user and container
@@ -1374,7 +1533,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                     session_mode=session_mode,
                     session_id=session_id,
                     model=selected_model,
-                    provider=PROVIDER_COPILOT,
+                    provider=provider,
                 )
                 _stats_prefixes = (
                     'Total usage est:', 'API time spent:', 'Total session time:',
@@ -1412,6 +1571,27 @@ def stream_ask_copilot(cmd: dict, write_line):
 
             response_lines, rc, was_cancelled = _run_copilot(session_args, _enriched_prompt)
 
+            if not was_cancelled and provider == PROVIDER_GAB and rc != 0:
+                _output_lower = ' '.join(response_lines).lower()
+                if 'model "' in _output_lower and (
+                    'not available' in _output_lower
+                    or 'invalid or disabled' in _output_lower
+                    or 'is invalid' in _output_lower
+                ):
+                    current_wire = str(env.get('COPILOT_PROVIDER_WIRE_MODEL') or selected_model).strip()
+                    alt_wire = current_wire.replace('.', '-') if '.' in current_wire else current_wire
+                    _m = re.match(r'^gpt-(\d+)-(\d+)$', current_wire)
+                    if _m:
+                        alt_wire = f"gpt-{_m.group(1)}.{_m.group(2)}"
+                    if alt_wire and alt_wire != current_wire:
+                        env['COPILOT_MODEL'] = alt_wire
+                        env['COPILOT_PROVIDER_WIRE_MODEL'] = alt_wire
+                        write_line({
+                            'type': 'progress',
+                            'message': f'[INFO] Retrying Gab.ai with wire model alias: {alt_wire}',
+                        })
+                        response_lines, rc, was_cancelled = _run_copilot(session_args, _enriched_prompt)
+
             # Auto-detect CAPIError / 400 Bad Request in output — corrupt session.
             # Clear the pinned session and retry once with a fresh --continue session.
             _caperror_markers = (
@@ -1428,7 +1608,7 @@ def stream_ask_copilot(cmd: dict, write_line):
             if not was_cancelled and (rc != 0 or any(m in _output_lower for m in _caperror_markers)):
                 if session_mode == 'pinned':
                     try:
-                        clear_copilot_pinned_session_id(selected_model)
+                        clear_copilot_pinned_session_id(selected_model, provider=provider)
                     except Exception:
                         pass
                     write_line({'type': 'progress',
@@ -1454,7 +1634,7 @@ def stream_ask_copilot(cmd: dict, write_line):
             actual_session_id = session_id
             if rc == 0:
                 try:
-                    session_state_dir = Path.home() / '.copilot' / 'session-state'
+                    session_state_dir = _copilot_session_state_dir(provider, env)
                     if session_state_dir.exists():
                         dirs = sorted(
                             (e for e in session_state_dir.iterdir() if e.is_dir()),
@@ -1464,7 +1644,7 @@ def stream_ask_copilot(cmd: dict, write_line):
                         if dirs:
                             actual_session_id = dirs[0].name
                             if session_mode == 'pinned':
-                                write_copilot_pinned_session_id(selected_model, dirs[0].name)
+                                write_copilot_pinned_session_id(selected_model, dirs[0].name, provider=provider)
                 except Exception:
                     pass
 
@@ -1487,7 +1667,9 @@ def stream_ask_copilot(cmd: dict, write_line):
                     'session_id': actual_session_id,
                     'session_mode': session_mode,
                     'model': selected_model,
-                    'provider': PROVIDER_COPILOT,
+                    'provider': provider,
+                    'turn_count': _copilot_session_turn_count(provider, actual_session_id, env) if actual_session_id else 0,
+                    'auto_rotated': rotated_for_turn_limit,
                 })
             else:
                 write_line({'type': 'error',
@@ -1614,7 +1796,9 @@ def stream_ask_local_provider(cmd: dict, write_line, *, provider: str):
 
     history = session_messages(session_id)
     context_preamble = _build_context_preamble()
-    enriched_prompt = context_preamble + prompt if context_preamble else prompt
+    task_context = _task_context_for_prompt(prompt)
+    preamble = f"{context_preamble}{task_context}"
+    enriched_prompt = preamble + prompt if preamble else prompt
     messages = [
         {'role': 'system', 'content': _ask_genny_system_prompt()},
         *history,
@@ -1694,6 +1878,7 @@ def stream_ask_local_provider(cmd: dict, write_line, *, provider: str):
             'session_mode': session_mode,
             'model': selected_model,
             'provider': provider,
+            'turn_count': session_turn_count(session_id),
         })
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode('utf-8', errors='replace').strip()
@@ -2208,8 +2393,8 @@ def stream_reinit_session(cmd: dict, write_line):
         acquire_file_lock(_lf, blocking=True)
         try:
             if provider_supports_copilot_sessions(provider):
-                old_id = read_copilot_pinned_session_id(model)
-                clear_copilot_pinned_session_id(model)
+                old_id = read_copilot_pinned_session_id(model, provider=provider)
+                clear_copilot_pinned_session_id(model, provider=provider)
             else:
                 old_id = read_local_pinned_session_id(provider, model)
                 clear_local_pinned_session(provider, model)

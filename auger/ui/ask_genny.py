@@ -20,10 +20,12 @@ from auger.ai.provider_sessions import (
     read_copilot_pinned_session_id,
     read_local_pinned_session_id,
     rename_local_session,
+    session_turn_count,
 )
 from auger.ai.providers import (
     COPILOT_MODEL_OPTIONS,
     PROVIDER_COPILOT,
+    PROVIDER_GAB,
     PROVIDER_LABELS,
     PROVIDER_OPENAI,
     available_models,
@@ -97,6 +99,10 @@ class AskGennyPanel(tk.Frame):
         self._selected_session_target = {'mode': 'pinned'}
         self._session_aliases = {}
         self._session_targets_by_label = {}
+        self._auto_rotate_enabled_var = tk.BooleanVar(value=False)
+        self._auto_rotate_turns_var = tk.StringVar(value='100')
+        self._turn_count_var = tk.StringVar(value='0 turns')
+        self._pending_context_bridge_reason = ''
         self._provider_labels = {label: provider for provider, label in PROVIDER_LABELS.items()}
         self._provider_values = [PROVIDER_LABELS[provider] for provider in PROVIDER_LABELS]
         self._model_options_cache = {provider: seeded_models(provider) for provider in PROVIDER_LABELS}
@@ -293,12 +299,25 @@ class AskGennyPanel(tk.Frame):
         else:
             self._selected_session_target = {'mode': 'pinned'}
 
+        auto_rotate = data.get('auto_rotate', {})
+        if isinstance(auto_rotate, dict):
+            self._auto_rotate_enabled_var.set(bool(auto_rotate.get('enabled', False)))
+            turns = str(auto_rotate.get('turns') or '100').strip()
+            self._auto_rotate_turns_var.set(turns if turns.isdigit() else '100')
+        else:
+            self._auto_rotate_enabled_var.set(False)
+            self._auto_rotate_turns_var.set('100')
+
     def _save_panel_state(self):
         payload = {
             'selected_provider': self._effective_provider(),
             'selected_model': self._effective_model(),
             'session_target': dict(self._selected_session_target),
             'session_aliases': dict(sorted(self._session_aliases.items())),
+            'auto_rotate': {
+                'enabled': bool(self._auto_rotate_enabled_var.get()),
+                'turns': self._validated_auto_rotate_turns(),
+            },
         }
         try:
             self._panel_state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -313,15 +332,59 @@ class AskGennyPanel(tk.Frame):
     def _effective_model(self) -> str:
         return normalize_model(self._effective_provider(), self._model_var.get())
 
-    def _copilot_session_state_dir(self) -> Path:
-        return Path.home() / '.copilot' / 'session-state'
+    def _validated_auto_rotate_turns(self) -> int:
+        raw = str(self._auto_rotate_turns_var.get() or '').strip()
+        try:
+            value = int(raw)
+        except Exception:
+            value = 100
+        value = max(10, min(value, 2000))
+        if str(value) != raw:
+            self._auto_rotate_turns_var.set(str(value))
+        return value
+
+    def _copilot_home_for_provider(self, provider: str | None = None) -> Path:
+        provider = normalize_provider(provider or self._effective_provider())
+        if provider == PROVIDER_GAB:
+            path = state_dir() / 'copilot-homes' / 'gab'
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+        return Path.home() / '.copilot'
+
+    def _copilot_session_state_dir(self, provider: str | None = None) -> Path:
+        return self._copilot_home_for_provider(provider) / 'session-state'
 
     def _read_pinned_session_id(self) -> str:
         provider = self._effective_provider()
         model = self._effective_model()
         if provider_supports_copilot_sessions(provider):
-            return read_copilot_pinned_session_id(model)
+            return read_copilot_pinned_session_id(model, provider=provider)
         return read_local_pinned_session_id(provider, model)
+
+    def _copilot_turn_count(self, session_id: str, provider: str | None = None) -> int:
+        session_id = str(session_id or '').strip()
+        if not session_id:
+            return 0
+        session_dir = self._copilot_session_state_dir(provider) / session_id
+        events_path = session_dir / 'events.jsonl'
+        if not events_path.exists():
+            return 0
+        count = 0
+        try:
+            with open(events_path, 'r', encoding='utf-8', errors='ignore') as fh:
+                for raw in fh:
+                    if '"type"' not in raw:
+                        continue
+                    try:
+                        evt = json.loads(raw)
+                    except Exception:
+                        continue
+                    etype = str(evt.get('type') or '').strip().lower()
+                    if etype == 'user.message':
+                        count += 1
+        except Exception:
+            return 0
+        return count
 
     def _clean_session_name(self, name: str) -> str:
         return ' '.join(str(name or '').strip().split())
@@ -335,7 +398,7 @@ class AskGennyPanel(tk.Frame):
             return ''
 
     def _list_copilot_sessions(self, limit: int = 30) -> list[dict]:
-        session_root = self._copilot_session_state_dir()
+        session_root = self._copilot_session_state_dir(self._effective_provider())
         if not session_root.exists():
             return []
         entries = []
@@ -493,6 +556,7 @@ class AskGennyPanel(tk.Frame):
             self._set_session_target({'mode': 'pinned'}, refresh=False)
             selected_label = pinned_label
         self._session_var.set(selected_label)
+        self._refresh_turn_count()
 
         rename_state = tk.NORMAL if (
             self._selected_session_target.get('mode') == 'new'
@@ -500,6 +564,52 @@ class AskGennyPanel(tk.Frame):
             or bool(pinned_session_id)
         ) else tk.DISABLED
         self._rename_session_btn.config(state=rename_state)
+
+    def _refresh_turn_count(self):
+        provider = self._effective_provider()
+        model = self._effective_model()
+        if provider_supports_copilot_sessions(provider):
+            session_id = self._read_pinned_session_id() if self._selected_session_target.get('mode') == 'pinned' else self._selected_session_id()
+            turns = self._copilot_turn_count(session_id, provider=provider)
+        else:
+            session_id = self._selected_session_id()
+            turns = session_turn_count(session_id) if session_id else 0
+        label = "turn" if turns == 1 else "turns"
+        self._turn_count_var.set(f"{turns} {label}")
+
+    def _build_context_bridge_text(self, max_turns: int = 4, max_chars: int = 1200) -> str:
+        """Create a compact continuity bridge from recent user/assistant exchanges."""
+        recent: list[tuple[str, str]] = []
+        try:
+            if self._history_file.exists():
+                for raw in self._history_file.read_text(encoding='utf-8', errors='ignore').splitlines()[-120:]:
+                    try:
+                        entry = json.loads(raw)
+                    except Exception:
+                        continue
+                    role = str(entry.get('role') or '').strip()
+                    content = str(entry.get('content') or '').strip()
+                    if role in {'user', 'assistant'} and content:
+                        recent.append((role, content))
+        except Exception:
+            recent = []
+
+        if not recent:
+            return ''
+        trimmed = recent[-(max_turns * 2):]
+        lines = [
+            "Continuity bridge from prior lane (compact):",
+        ]
+        for role, content in trimmed:
+            prefix = "User" if role == 'user' else "Assistant"
+            snippet = ' '.join(content.split())
+            if len(snippet) > 220:
+                snippet = snippet[:217].rstrip() + '...'
+            lines.append(f"- {prefix}: {snippet}")
+        bridge = '\n'.join(lines)
+        if len(bridge) > max_chars:
+            bridge = bridge[: max_chars - 3].rstrip() + '...'
+        return bridge
 
     def _selected_session_id(self) -> str:
         mode = self._selected_session_target.get('mode')
@@ -510,9 +620,12 @@ class AskGennyPanel(tk.Frame):
         return ''
 
     def _on_provider_selected(self, _event=None):
+        previous_provider = self._effective_provider()
         current_label = self._provider_var.get()
         provider = self._provider_labels.get(current_label, current_label)
         self._provider_var.set(PROVIDER_LABELS[normalize_provider(provider)])
+        if normalize_provider(provider) != previous_provider:
+            self._pending_context_bridge_reason = 'provider_switch'
         self._model_var.set(default_model(self._effective_provider()))
         self._set_session_target({'mode': 'pinned'}, refresh=False)
         self._refresh_model_selector()
@@ -525,12 +638,23 @@ class AskGennyPanel(tk.Frame):
         self._model_var.set(self._effective_model())
         self._set_session_target({'mode': 'pinned'}, refresh=False)
         self._refresh_session_selector()
+        self._refresh_turn_count()
         self._save_panel_state()
 
     def _on_session_selected(self, _event=None):
         target = self._session_targets_by_label.get(self._session_var.get())
         if target:
             self._set_session_target(target, refresh=False)
+            self._refresh_turn_count()
+
+    def _on_auto_rotate_toggle(self):
+        if self._auto_rotate_enabled_var.get():
+            self._validated_auto_rotate_turns()
+        self._save_panel_state()
+
+    def _on_auto_rotate_turns_change(self, _event=None):
+        self._validated_auto_rotate_turns()
+        self._save_panel_state()
 
     def _new_session(self):
         suggested = datetime.now().strftime('Session %m/%d %H:%M')
@@ -593,6 +717,10 @@ class AskGennyPanel(tk.Frame):
             rename_local_session(session_id, cleaned)
         self._save_panel_state()
         self._refresh_session_selector()
+        if 'turn_count' in metadata:
+            turns = int(metadata.get('turn_count') or 0)
+            label = "turn" if turns == 1 else "turns"
+            self._turn_count_var.set(f"{turns} {label}")
         self._refresh_provider_health_ui()
 
     def _apply_session_result(self, metadata: dict | None):
@@ -649,6 +777,7 @@ class AskGennyPanel(tk.Frame):
         self._session_combo.config(state=session_state)
         self._new_session_btn.config(state=new_session_state)
         self._rename_session_btn.config(state=rename_state)
+        self._auto_rotate_turns.config(state=(tk.NORMAL if self._auto_rotate_enabled_var.get() else tk.DISABLED))
     
     def _build_ui(self):
         """Build the panel UI."""
@@ -782,6 +911,56 @@ class AskGennyPanel(tk.Frame):
             pady=0,
         )
         self._rename_session_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self._turn_count_label = tk.Label(
+            header,
+            textvariable=self._turn_count_var,
+            font=('Segoe UI', 8),
+            fg=ASK_HEADER_TEXT_MUTED,
+            bg=ASK_HEADER_BG,
+        )
+        self._turn_count_label.pack(side=tk.LEFT, padx=(0, 8))
+
+        self._auto_rotate_chk = tk.Checkbutton(
+            header,
+            text='Auto rotate',
+            variable=self._auto_rotate_enabled_var,
+            command=self._on_auto_rotate_toggle,
+            bg=ASK_HEADER_BG,
+            fg=ASK_HEADER_TEXT_MUTED,
+            activebackground=ASK_HEADER_BG,
+            activeforeground=ASK_HEADER_TEXT,
+            selectcolor=ASK_HEADER_BG,
+            font=('Segoe UI', 8),
+            padx=2,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+        )
+        self._auto_rotate_chk.pack(side=tk.LEFT, padx=(0, 3))
+
+        self._auto_rotate_turns = tk.Entry(
+            header,
+            textvariable=self._auto_rotate_turns_var,
+            width=4,
+            bg=ASK_HEADER_COMBO_BG,
+            fg=ASK_HEADER_COMBO_TEXT,
+            relief=tk.FLAT,
+            font=('Segoe UI', 8),
+            insertbackground=ASK_HEADER_COMBO_TEXT,
+            justify='center',
+        )
+        self._auto_rotate_turns.bind('<FocusOut>', self._on_auto_rotate_turns_change)
+        self._auto_rotate_turns.bind('<Return>', self._on_auto_rotate_turns_change)
+        self._auto_rotate_turns.pack(side=tk.LEFT, padx=(0, 2))
+
+        tk.Label(
+            header,
+            text='turns',
+            font=('Segoe UI', 8),
+            fg=ASK_HEADER_TEXT_DIM,
+            bg=ASK_HEADER_BG,
+        ).pack(side=tk.LEFT, padx=(0, 8))
         
         self.status_label = tk.Label(
             header,
@@ -1176,6 +1355,14 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
 
         daemon_endpoint = f'{daemon_url()}/ask'
         response_lines = []
+        bridge_reason = self._pending_context_bridge_reason.strip()
+        auto_rotate_payload = {
+            'enabled': bool(self._auto_rotate_enabled_var.get()),
+            'max_turns': self._validated_auto_rotate_turns(),
+        }
+        bridge_text = self._build_context_bridge_text() if (bridge_reason or auto_rotate_payload['enabled']) else ''
+        # Clear one-shot bridge reason as soon as request starts.
+        self._pending_context_bridge_reason = ''
         try:
             req = urllib.request.Request(
                 daemon_endpoint,
@@ -1185,6 +1372,9 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
                     'provider': self._effective_provider(),
                     'model': self._effective_model(),
                     'session_target': dict(self._selected_session_target),
+                    'context_bridge': bridge_text,
+                    'context_bridge_reason': bridge_reason,
+                    'auto_rotate': auto_rotate_payload,
                 }).encode(),
                 headers={'Content-Type': 'application/json'},
                 method='POST',
@@ -1367,6 +1557,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
 
                 elif msg_type == 'session_meta':
                     self._apply_session_result(data)
+                    self._refresh_turn_count()
                 
                 elif msg_type == 'widget':
                     code, widget_name = data if isinstance(data, tuple) else (data, 'new_widget')
@@ -2100,6 +2291,7 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         """Update header age label and remote lock state from session_status."""
         if data is None:
             return
+        self._refresh_turn_count()
 
         if not provider_supports_copilot_sessions(self._effective_provider()):
             self._session_locked = False
@@ -2248,6 +2440,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self._session_combo.config(state='disabled')
         self._new_session_btn.config(state=tk.DISABLED)
         self._rename_session_btn.config(state=tk.DISABLED)
+        self._auto_rotate_chk.config(state=tk.DISABLED)
+        self._auto_rotate_turns.config(state=tk.DISABLED)
         self._is_processing = True
         try:
             self._unlock_btn.pack_forget()
@@ -2272,6 +2466,8 @@ Generated widgets will appear as tabs above. **Shift+Enter** for newline, **Ente
         self._session_combo.config(state='readonly')
         self._new_session_btn.config(state=tk.NORMAL)
         self._rename_session_btn.config(state=tk.NORMAL)
+        self._auto_rotate_chk.config(state=tk.NORMAL)
+        self._auto_rotate_turns.config(state=(tk.NORMAL if self._auto_rotate_enabled_var.get() else tk.DISABLED))
         self._refresh_session_selector()
         self._is_processing = False
         self._cancel_requested = False
