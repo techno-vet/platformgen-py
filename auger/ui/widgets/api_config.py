@@ -1994,9 +1994,9 @@ class APIConfigWidget(tk.Frame):
         try:
             self._log("dev.to: Testing...", 'info')
             
-            # Test with /me endpoint
+            # Test with /users/me endpoint (correct path for dev.to)
             resp = requests.get(
-                f"{api_url.rstrip('/')}/me",
+                f"{api_url.rstrip('/')}/users/me",
                 headers={
                     'api-key': api_key,
                     'Accept': 'application/vnd.forem.api-v1+json'

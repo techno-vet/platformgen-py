@@ -245,7 +245,7 @@ class DevtoPublisher:
             User data dict with username, name, email, etc.
         """
         resp = self.session.get(
-            f"{self.api_url}/me",
+            f"{self.api_url}/users/me",
             timeout=self.timeout
         )
         
