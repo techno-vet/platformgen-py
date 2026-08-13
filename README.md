@@ -1,17 +1,40 @@
-# Auger Platform
-### *Drill Down With Auger* 🔩
+# platformgen 🚀
 
-> ⚠️ **Alpha Release** - Currently in alpha testing. See [ALPHA_TESTING.md](ALPHA_TESTING.md) for testing guide.
+### The AI-Powered Platform Generator
 
-**AI-powered SRE platform with dynamic widgets and chat assistant**
+> **Build ANY platform in days, not months.**
+>
+> Ask Genny what you want. Genny builds it. Deploy.
 
-Auger Platform is a comprehensive tool for SREs, developers, BAs, and POs that provides:
-- 🤖 **Ask Auger** - AI chat assistant to help configure and use the platform
-- 📊 **Dynamic Widgets** - Pods monitoring, GitHub PRs, ServiceNow tickets, CVE scanning, and more  
-- 🔐 **Secure Credential Management** - Encrypted secrets, environment-based configuration
-- 🔄 **Hot Reload** - Develop and test widgets without restarting
-- 🎨 **Modern UI** - Dark theme, responsive design
-- 🔌 **Extensible** - Easy to add custom widgets and integrations
+**platformgen is a meta-platform builder** — use it to generate production platforms for any business domain. Built entirely in Python/Tkinter with GitHub Copilot integration.
+
+## What Can You Build?
+
+✅ **Ask Auger** — SRE Dashboard (built WITH platformgen)  
+✅ **OpenJuke** — Music/Media Platform (built WITH platformgen)  
+✅ **Custom Dashboards** — Any business domain  
+✅ **Internal Tools** — Microservices, APIs, monitoring  
+✅ **Data Platforms** — ETL, analytics, reporting  
+
+**The Meta-Story:** platformgen was built WITH platformgen. Genny can improve herself.
+
+## How It Works
+
+1. **Describe** — "I need a platform that tracks X"
+2. **Genny Builds** — AI generates architecture, widgets, APIs
+3. **Customize** — Add widgets, APIs, integrations (no code needed)
+4. **Deploy** — Docker + Kubernetes ready (GitOps built-in)
+
+## Key Features
+
+- 🤖 **Ask Genny AI** — Embedded Copilot-powered assistant with real-time reasoning & token tracking
+- 📊 **26+ Pre-built Widgets** — Jira, GitHub, Jenkins, Kubernetes, Flux, Artifactory, DataDog, and more
+- 🔥 **Hot Reload** — Change widgets in 1 second (no app restart)
+- 🐳 **Docker Native** — Runs as container on Amazon WorkSpace (Ubuntu)
+- 🌐 **Cloud Native** — Kubernetes + Flux GitOps built-in
+- 🎨 **Professional UI** — Dark theme, markdown rendering, animations
+- 🔐 **Secure Credential Management** — Encrypted secrets, environment-based config
+- 🔌 **Extensible** — Add widgets via natural language to Genny
 
 ---
 
@@ -27,50 +50,79 @@ Auger Platform is a comprehensive tool for SREs, developers, BAs, and POs that p
 
 ---
 
-## Quick Start
+## Quick Start: Ask Auger (SRE Example)
 
-### Prerequisites
-- Python 3.10 or higher
-- Git
-- Linux or Windows host environment
+### Option 1: Docker (Recommended)
 
-### Installation
+```bash
+docker pull ghcr.io/techno-vet/platformgen-py:latest
+docker run -it \
+  -e GH_TOKEN=your_copilot_token \
+  -v ~/.platformgen:/home/user/.platformgen \
+  -v ~/.kube:/home/user/.kube:ro \
+  -v ~/repos:/home/user/repos \
+  -e DISPLAY=:0 \
+  ghcr.io/techno-vet/platformgen-py:latest
+```
+
+### Option 2: Python venv (Development)
 
 ```bash
 git clone https://github.com/techno-vet/platformgen-py.git
 cd platformgen-py
-python3 scripts/platformgen-installer.py
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+auger start
 ```
 
-Optional desktop UI wrapper:
+## Open Source + Commercial
 
-```bash
-python3 scripts/install_wizard.py
-```
+**platformgen is MIT licensed** — use it freely in commercial projects.
 
-The Python-first installer bootstraps a host venv, seeds `~/.platformgen`, imports compatible credentials when available, installs the repo in editable mode, creates the PlatformGen launcher/icon, and launches the host runtime. Linux and Windows are first-class targets; macOS support is planned through the same installer core.
+**ask-genny.cloud** — Managed SaaS (coming soon) with:
+- ☁️ Hosted agents (no local setup)
+- 🔐 Private agent sessions  
+- 🔗 Enterprise SSO
+- 📈 Analytics & audit logs
+- 💬 Slack integration
 
----
-
-## Features
-
-- **Ask Auger Chat** - AI assistant helps configure integrations
-- **Pods Monitor** - DataDog Kubernetes pod monitoring
-- **GitHub** - PRs, repos, CI/CD status
-- **ServiceNow** - Incidents, changes (web scraping, no API key!)
-- **Cryptkeeper Lite** - Jasypt encryption, multi-environment
-- **Prospector** - CVE scanning and diff
-- **Hot Reload** - Widget development without restart
+[Learn more →](https://ask-genny.ai)
 
 ---
 
 ## Documentation
 
-- [Session Framework & Rules](docs/SESSION_FRAMEWORK_AND_RULES.md) — *Learn how session recovery, prompt rules, and widgets work*
-- [Quick Start Guide](docs/QUICKSTART.md)
-- [Configuration Guide](docs/README_CONFLUENCE_INTEGRATION.md)
-- [Widget Development](docs/HOW_DYNAMIC_WIDGETS_WORK.md)
-- [Distribution Plan](docs/AUGER_DISTRIBUTION_PLAN.md)
+- 📖 [Installation Guide](INSTALLATION_GUIDE.md) — Setup & configuration
+- 🎬 [Quick Start](docs/QUICKSTART.md) — Get running in 5 minutes
+- 🏗️ [Architecture](docs/ARCHITECTURE.md) — How platformgen works
+- 🛠️ [Contributing](CONTRIBUTING.md) — Widget development guide
+- 🔒 [Security Policy](SECURITY.md) — Vulnerability reporting
+- 💬 [Ask Genny Prompts](docs/PROMPTS.md) — AI customization
+- 🧪 [Testing Guide](ALPHA_TESTING.md) — Alpha testing
+
+## Community
+
+- 💬 [Discussions](https://github.com/techno-vet/platformgen-py/discussions) — Ask questions
+- 🐛 [Issues](https://github.com/techno-vet/platformgen-py/issues) — Report bugs or request features
+- 💬 [Discord](https://discord.gg/platformgen) — Real-time chat
+- 🌟 [GitHub Sponsors](https://github.com/sponsors/techno-vet) — Support the project
+
+## Roadmap
+
+### Q3 2026
+- [x] Open source core library (MIT)
+- [x] Public GitHub org (techno-vet)
+- [ ] Ask Genny v2.0 (reasoning animations, token tracking)
+- [ ] Discord community launch
+
+### Q4 2026
+- [ ] Enterprise self-hosted tier
+- [ ] Kubernetes operator for platform deployment
+- [ ] Plugin marketplace (community widgets)
+- [ ] GitHub Actions integration
+
+[Full roadmap →](https://github.com/orgs/techno-vet/projects/1)
 
 ---
 
