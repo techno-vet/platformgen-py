@@ -52,29 +52,37 @@
 
 ## Quick Start: Ask Auger (SRE Example)
 
-### Option 1: Docker (Recommended)
-
-```bash
-docker pull ghcr.io/techno-vet/platformgen-py:latest
-docker run -it \
-  -e GH_TOKEN=your_copilot_token \
-  -v ~/.platformgen:/home/user/.platformgen \
-  -v ~/.kube:/home/user/.kube:ro \
-  -v ~/repos:/home/user/repos \
-  -e DISPLAY=:0 \
-  ghcr.io/techno-vet/platformgen-py:latest
-```
-
-### Option 2: Python venv (Development)
+### Option 1: Python venv (Recommended)
 
 ```bash
 git clone https://github.com/techno-vet/platformgen-py.git
 cd platformgen-py
-python3 -m venv venv
-source venv/bin/activate
-pip install -e .
+bash install.sh
+```
+
+Then initialize and start:
+```bash
+auger init --token YOUR_GITHUB_COPILOT_TOKEN
 auger start
 ```
+
+**Requires:** Python 3.10+, `python3-tk` (X11 display for UI)
+
+```bash
+# Linux
+sudo apt-get install python3-tk
+
+# macOS
+brew install python-tk
+```
+
+### Option 2: Docker
+
+```bash
+bash scripts/auger-setup.sh
+```
+
+Automatically handles X11 display, volume mounts, token setup, and image pulling.
 
 ## Open Source + Commercial
 

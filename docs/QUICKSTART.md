@@ -33,22 +33,45 @@ You can leave values blank and only fill in the keys you already have before onb
 
 ---
 
-## Step 2 — Run the install wizard
+## Step 2a — Install via Python venv (Recommended)
 
 ```bash
-python3 scripts/platformgen-installer.py
+bash install.sh
+```
+
+This will:
+1. Create a Python virtual environment
+2. Install platformgen as an editable package  
+3. Add `platformgen` command to your PATH
+4. Guide you through token setup
+
+**Requires:** Python 3.10+, `python3-tk` system package
+
+```bash
+# Linux
+sudo apt-get install python3-tk
+
+# macOS
+brew install python-tk
+```
+
+---
+
+## Step 2b — Install via Docker (Alternative)
+
+```bash
+bash scripts/auger-setup.sh
 ```
 
 The wizard will:
-1. **Auto-detect credentials** from AU Gold (`~/.astutl/`), `gh` CLI, or env vars — no typing required if you have AU Gold installed
-2. **Capture missing GitHub tokens early** — both `GH_TOKEN` (github.com) and `GHE_TOKEN` (github.helix.gsa.gov)
-3. **Validate** each credential live before saving (GitHub, Enterprise GitHub, Artifactory image access)
-4. **Pull the image** from Artifactory (~500 MB, once only)
+1. **Auto-detect credentials** from AU Gold (`~/.astutl/`), `gh` CLI, or env vars
+2. **Capture missing GitHub tokens** — both `GH_TOKEN` (github.com) and `GHE_TOKEN` (github.helix.gsa.gov)
+3. **Validate** each credential before saving
+4. **Pull the Docker image** (~500 MB, once only)
 5. **Launch PlatformGen** — the platform window opens on your desktop
 
-> **AU Gold users**: the wizard detects `astutl_secure_config.env` automatically and imports Artifactory, GitHub, DataDog, Rancher, Jenkins, Jira, and Cryptkeeper keys silently — you likely won't be prompted for anything.
-
-> **No AU Gold?** The wizard will ask for your `github.com` token, your `github.helix.gsa.gov` token, and your Artifactory credentials, then validate them before proceeding.
+> **AU Gold users**: The wizard detects `astutl_secure_config.env` automatically
+> **No AU Gold?** You'll be prompted for GitHub tokens and Artifactory credentials
 
 ---
 
