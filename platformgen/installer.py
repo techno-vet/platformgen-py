@@ -126,6 +126,17 @@ def _launcher_cmd_path(state_dir: Path) -> Path:
     return _launcher_bin_dir(state_dir) / "platformgen-open.cmd"
 
 
+def _windows_icon_path(state_dir: Path) -> Path:
+    return state_dir / "app_icon.ico"
+
+
+def _windows_shortcut_paths() -> tuple[Path, Path]:
+    appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    desktop_shortcut = Path.home() / "Desktop" / f"{APP_NAME}.lnk"
+    start_menu_shortcut = appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "PlatformGen" / f"{APP_NAME}.lnk"
+    return desktop_shortcut, start_menu_shortcut
+
+
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -701,24 +712,12 @@ def _create_windows_shortcut(shortcut_path: Path, target: str, arguments: str, i
 
 
 def _install_windows_launcher(options: InstallOptions, launcher_script: Path, ui: InstallUI) -> Path:
-    local_appdata = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    icon_path = local_appdata / "PlatformGen" / "icons" / "platformgen.ico"
-    _render_icon_with_venv(options.state_dir, options.repo_dir, icon_path, "ICO")
-
-    pythonw = _venv_pythonw(options.state_dir)
-    desktop_shortcut = Path.home() / "Desktop" / f"{APP_NAME}.lnk"
-    start_menu_shortcut = appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "PlatformGen" / f"{APP_NAME}.lnk"
-
-    created_any = False
-    args = str(launcher_script)
-    for shortcut in (desktop_shortcut, start_menu_shortcut):
-        created_any = _create_windows_shortcut(shortcut, str(pythonw), args, str(icon_path), str(options.repo_dir)) or created_any
-
-    if created_any:
-        ui.log(f"[OK] Installed Windows shortcuts for {APP_NAME}")
-    else:
-        ui.log(f"[WARN] Could not create Windows shortcuts automatically. Launcher script is at {launcher_script}")
+    _, start_menu_shortcut = _ensure_windows_launcher_assets(
+        options.state_dir,
+        options.repo_dir,
+        options.daemon_port,
+        ui=ui,
+    )
     return start_menu_shortcut
 
 
@@ -764,6 +763,36 @@ def _spawn_detached(cmd: list[str], *, env: dict, stdout, stderr):
     return subprocess.Popen(cmd, **kwargs)
 
 
+def _ensure_windows_launcher_assets(
+    state_dir: Path,
+    repo_dir: Path,
+    daemon_port: int,
+    ui: InstallUI | None = None,
+) -> tuple[Path, Path]:
+    launcher_script = _launcher_script_path(state_dir)
+    if not launcher_script.exists():
+        launcher_script.parent.mkdir(parents=True, exist_ok=True)
+        launcher_script.write_text(
+            _launcher_script_content(state_dir, repo_dir, daemon_port),
+            encoding="utf-8",
+        )
+    icon_path = _windows_icon_path(state_dir)
+    _render_icon_with_venv(state_dir, repo_dir, icon_path, "ICO")
+
+    pythonw = _venv_pythonw(state_dir)
+    desktop_shortcut, start_menu_shortcut = _windows_shortcut_paths()
+    created_any = False
+    args = str(launcher_script)
+    for shortcut in (desktop_shortcut, start_menu_shortcut):
+        created = _create_windows_shortcut(shortcut, str(pythonw), args, str(icon_path), str(repo_dir))
+        created_any = created or created_any
+        if ui and created:
+            ui.log(f"[OK] Installed Windows shortcut: {shortcut}")
+    if ui and not created_any:
+        ui.log(f"[WARN] Could not create Windows shortcuts automatically. Launcher script is at {launcher_script}")
+    return desktop_shortcut, start_menu_shortcut
+
+
 def launch_installed(state_dir: Path, repo_dir: Path, daemon_port: int, detach: bool = True, ui: InstallUI | None = None) -> int:
     state_dir = Path(state_dir).expanduser()
     repo_dir = Path(repo_dir).expanduser()
@@ -781,17 +810,25 @@ def launch_installed(state_dir: Path, repo_dir: Path, daemon_port: int, detach: 
     env["AUGER_MODE"] = "venv"
     if os.name != "nt":
         env["DISPLAY"] = _detect_display()
+    else:
+        try:
+            _ensure_windows_launcher_assets(state_dir, repo_dir, daemon_port, ui=ui)
+        except Exception as exc:
+            if ui:
+                ui.log(f"[WARN] Could not refresh Windows launcher assets: {exc}")
 
     daemon_script = repo_dir / "scripts" / "host_tools_daemon.py"
     if daemon_script.exists() and not _daemon_health(daemon_port):
         daemon_log = state_dir / "daemon.log"
         daemon_log.parent.mkdir(parents=True, exist_ok=True)
         with daemon_log.open("a", encoding="utf-8") as handle:
-            _spawn_detached([str(python_path), str(daemon_script)], env=env, stdout=handle, stderr=handle)
+            daemon_python = _venv_pythonw(state_dir) if os.name == "nt" and detach else python_path
+            _spawn_detached([str(daemon_python), str(daemon_script)], env=env, stdout=handle, stderr=handle)
         if ui:
             ui.log(f"[OK] Started host tools daemon on port {daemon_port}")
 
-    cmd = [str(python_path), "-m", "platformgen", "start", "--config-dir", str(state_dir)]
+    ui_python = _venv_pythonw(state_dir) if os.name == "nt" and detach else python_path
+    cmd = [str(ui_python), "-m", "platformgen", "start", "--config-dir", str(state_dir)]
     if detach:
         log_path = state_dir / "venv-platform.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)

@@ -34,6 +34,12 @@ GREEN = "#4ec9b0"
 RED = "#f44747"
 YELLOW = "#f0c040"
 
+
+def _windows_launcher_icon_path() -> Path:
+    local_appdata = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    return local_appdata / "PlatformGen" / "icons" / "platformgen.ico"
+
+
 def _runtime_mode() -> str:
     mode = (os.environ.get("AUGER_MODE") or "").strip().lower()
     return "venv" if mode == "venv" else "docker"
@@ -92,29 +98,7 @@ class PlatformGenApp(tk.Tk):
         self.minsize(900, 650)
         self.configure(bg=BG)
 
-        # Set window icon (titlebar + taskbar/dock).
-        # Save PNG to tmp then load with tk.PhotoImage — most reliable on X11.
-        try:
-            from platformgen.ui.icons import load_app_icon
-            import os
-
-            _icon_img = load_app_icon(256).convert("RGBA")
-            _icon_tmp = os.path.join(os.fspath(state_dir()), "app_icon.png")
-            _icon_img.save(_icon_tmp)
-            _icon_photo = tk.PhotoImage(file=_icon_tmp)
-            self.iconphoto(True, _icon_photo)
-            self._icon_photo_ref = _icon_photo  # prevent GC
-
-            if sys.platform == "win32":
-                # Also set an .ico for better Start/taskbar fidelity on Windows.
-                _icon_ico = os.path.join(os.fspath(state_dir()), "app_icon.ico")
-                _icon_img.save(_icon_ico, format="ICO")
-                try:
-                    self.iconbitmap(default=_icon_ico)
-                except Exception:
-                    pass
-        except Exception as _e:
-            print(f"[!] iconphoto failed: {_e}")
+        self._set_window_icons()
         
         # Configure dark theme
         self._setup_theme()
@@ -152,6 +136,39 @@ class PlatformGenApp(tk.Tk):
         self.report_callback_exception = self._handle_callback_exception
 
     
+    def _set_window_icons(self):
+        """Set taskbar/titlebar icons and refresh Windows launcher icon artifacts."""
+        try:
+            from platformgen.ui.icons import load_app_icon
+
+            icon_img = load_app_icon(256).convert("RGBA")
+            png_path = state_dir() / "app_icon.png"
+            ico_path = state_dir() / "app_icon.ico"
+            png_path.parent.mkdir(parents=True, exist_ok=True)
+            icon_img.save(png_path)
+            icon_img.save(ico_path, format="ICO")
+
+            if sys.platform == "win32":
+                launcher_ico = _windows_launcher_icon_path()
+                launcher_ico.parent.mkdir(parents=True, exist_ok=True)
+                icon_img.save(launcher_ico, format="ICO")
+            else:
+                launcher_ico = ico_path
+
+            icon_photo = tk.PhotoImage(file=str(png_path))
+            self.iconphoto(True, icon_photo)
+            self._icon_photo_ref = icon_photo
+
+            if sys.platform == "win32":
+                for candidate in (launcher_ico, ico_path):
+                    try:
+                        self.iconbitmap(str(candidate))
+                        break
+                    except Exception:
+                        continue
+        except Exception as exc:
+            print(f"[!] icon setup failed: {exc}")
+
     def _setup_theme(self):
         """Configure ttk dark theme."""
         style = ttk.Style()

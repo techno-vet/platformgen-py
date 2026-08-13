@@ -13,6 +13,7 @@ Proxy safety:  daemon health check bypasses corporate proxy (127.0.0.1:9000)
 """
 
 import json
+import os
 import queue
 import subprocess
 import threading
@@ -38,14 +39,19 @@ RED     = "#f44747"
 YELLOW  = "#f0c040"
 
 DAEMON_URL = daemon_url()
+_WIN_HIDDEN_FLAGS = 0x08000000 if os.name == "nt" else 0
 
 
 def _git(repo, *args, timeout=8):
     try:
-        r = subprocess.run(
-            ["git", "-C", str(repo)] + list(args),
-            capture_output=True, text=True, timeout=timeout,
-        )
+        kwargs = {
+            "capture_output": True,
+            "text": True,
+            "timeout": timeout,
+        }
+        if _WIN_HIDDEN_FLAGS:
+            kwargs["creationflags"] = _WIN_HIDDEN_FLAGS
+        r = subprocess.run(["git", "-C", str(repo)] + list(args), **kwargs)
         return r.stdout.strip()
     except Exception:
         return ""
