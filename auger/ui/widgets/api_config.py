@@ -204,6 +204,7 @@ class APIConfigWidget(tk.Frame):
         self._add_artifactory_section()
         self._add_confluence_section()
         self._add_prisma_cloud_section()
+        self._add_devto_section()
         self._add_cryptkeeper_section()
         
         # Bottom buttons
@@ -1953,6 +1954,74 @@ class APIConfigWidget(tk.Frame):
         return deduped
 
     
+    def _add_devto_section(self):
+        """Add dev.to (Forem) API section for blog publishing."""
+        self._add_section_header(
+            "dev.to (Forem API)",
+            "https://dev.to/settings/account"
+        )
+        
+        section = tk.Frame(self.scroll_frame, bg='#1e1e1e')
+        section.pack(fill=tk.X, padx=10)
+        
+        self._add_field(section, "API Key:", "DEVTO_API_KEY", is_masked=True)
+        self._add_field(section, "API URL:", "DEVTO_API_URL", default="https://dev.to/api")
+        
+        # Help text
+        help_label = tk.Label(
+            section,
+            text="Create API key at dev.to/settings/account → API Keys. Required for publishing blog posts.",
+            font=('Segoe UI', 8, 'italic'),
+            fg='#808080',
+            bg='#1e1e1e',
+            anchor=tk.W,
+            wraplength=800
+        )
+        help_label.pack(fill=tk.X, pady=(2, 5), padx=(140, 0))
+        
+        self._add_test_button(section, self._test_devto)
+        self._add_divider()
+    
+    def _test_devto(self):
+        """Test dev.to API connection."""
+        api_key = self.entries.get('DEVTO_API_KEY', tk.StringVar()).get().strip()
+        api_url = self.entries.get('DEVTO_API_URL', tk.StringVar()).get().strip()
+        
+        if not api_key:
+            self._log("dev.to: API key required", 'err')
+            return
+        
+        try:
+            self._log("dev.to: Testing...", 'info')
+            
+            # Test with /me endpoint
+            resp = requests.get(
+                f"{api_url.rstrip('/')}/me",
+                headers={
+                    'api-key': api_key,
+                    'Accept': 'application/vnd.forem.api-v1+json'
+                },
+                timeout=10
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                username = data.get('username', 'unknown')
+                name = data.get('name', username)
+                self._log(f"dev.to: ✓ Authenticated as {name} (@{username})", 'ok')
+            elif resp.status_code == 401:
+                self._log("dev.to: ✗ Invalid or expired API key", 'err')
+            elif resp.status_code == 403:
+                self._log("dev.to: ✗ Access forbidden (check API key permissions)", 'err')
+            else:
+                self._log(f"dev.to: ✗ Unexpected response (HTTP {resp.status_code})", 'err')
+        except requests.exceptions.ConnectionError:
+            self._log(f"dev.to: ✗ Cannot connect to {api_url}", 'err')
+        except requests.exceptions.Timeout:
+            self._log("dev.to: ✗ Connection timeout", 'err')
+        except Exception as e:
+            self._log(f"dev.to: ✗ Error: {str(e)[:80]}", 'err')
+
     def _add_cryptkeeper_section(self):
         """Add Cryptkeeper keys section for all environments (PROD, STAGING, TEST, DEV, LOCAL)."""
         self._add_section_header(
