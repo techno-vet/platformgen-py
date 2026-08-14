@@ -1,77 +1,43 @@
 # PlatformGen — Quick Start
 
-**Time to first launch: ~5 minutes** (mostly Docker pull on first run)
+**Time to first launch: ~3 minutes**
 
 ## Prerequisites
 
-- Amazon WorkSpace running Ubuntu
-- Docker installed (pre-installed on standard WorkSpaces)
-- Network access to `artifactory.helix.gsa.gov`
+- Python 3.10+
+- X11 display (for UI rendering)
 
 ---
 
-## Step 1 — Clone the repo
+## Step 1 — Clone and Install
 
 ```bash
-mkdir -p ~/projects && cd ~/projects
-# Use your current PlatformGen checkout URL if cloning fresh:
-git clone <platformgen-repo-url> platformgen-py
+git clone https://github.com/techno-vet/platformgen-py.git
 cd platformgen-py
+python3 scripts/install_wizard.py
 ```
 
----
+The installer will:
+1. ✅ Create a Python virtual environment in `~/.platformgen/`
+2. ✅ Install all dependencies (including `python3-tk`)
+3. ✅ **Prompt for your GitHub Copilot token** (required for Ask Genny)
+4. ✅ Add `genny` command to your PATH
+5. ✅ Optionally install GitHub Copilot CLI
 
-## Optional Step 1a — Pre-fill `~/.platformgen/.env`
-
+**Optional pre-install (Ubuntu/Debian only):**
 ```bash
-mkdir -p ~/.platformgen
-cp .env.example ~/.platformgen/.env
-chmod 600 ~/.platformgen/.env
-```
-
-You can leave values blank and only fill in the keys you already have before onboarding.
-
----
-
-## Step 2a — Install via Python venv (Recommended)
-
-```bash
-bash install.sh
-```
-
-This will:
-1. Create a Python virtual environment
-2. Install platformgen as an editable package  
-3. Add `platformgen` command to your PATH
-4. Guide you through token setup
-
-**Requires:** Python 3.10+, `python3-tk` system package
-
-```bash
-# Linux
 sudo apt-get install python3-tk
-
-# macOS
-brew install python-tk
 ```
 
 ---
 
-## Step 2b — Install via Docker (Alternative)
+## Step 2 — Launch PlatformGen
 
 ```bash
-bash scripts/auger-setup.sh
+genny start
 ```
 
-The wizard will:
-1. **Auto-detect credentials** from AU Gold (`~/.astutl/`), `gh` CLI, or env vars
-2. **Capture missing GitHub tokens** — both `GH_TOKEN` (github.com) and `GHE_TOKEN` (github.helix.gsa.gov)
-3. **Validate** each credential before saving
-4. **Pull the Docker image** (~500 MB, once only)
-5. **Launch PlatformGen** — the platform window opens on your desktop
-
-> **AU Gold users**: The wizard detects `astutl_secure_config.env` automatically
-> **No AU Gold?** You'll be prompted for GitHub tokens and Artifactory credentials
+The app window will open on your desktop.
 
 ---
 
@@ -91,13 +57,10 @@ Genny will walk you through the available widgets and next steps.
 
 | Widget | Key in `~/.platformgen/.env` | Where to get it |
 |--------|----------------------|----------------|
-| Ask Genny | `GH_TOKEN` | github.com → Fine-grained personal access tokens → create one with `Copilot requests` permission |
-| GitHub widget | `GHE_TOKEN` (`GHE_URL` defaults to `https://github.helix.gsa.gov`) | github.helix.gsa.gov → Settings → Tokens |
-| Artifactory | `ARTIFACTORY_IDENTITY_TOKEN` (preferred) or legacy `ARTIFACTORY_API_KEY` | Artifactory → Profile / Authentication Settings |
-| Rancher/Pods | `RANCHER_BEARER_TOKEN` | Rancher → API Keys |
-| DataDog | `DATADOG_API_KEY`, `DATADOG_APP_KEY` | DataDog → Org Settings |
-| Jira | `JIRA_API_TOKEN` | gsa-standard.atlassian-us-gov-mod.net → Profile |
-| Jenkins | `JENKINS_API_TOKEN` | jenkins-mcaas.helix.gsa.gov → Configure |
+| Ask Genny | `GH_TOKEN` | github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens (need `Copilot requests` scope) |
+| GitHub widget | `GHE_TOKEN` | github.helix.gsa.gov → Settings → Developer settings → Personal access tokens |
+| Artifactory | `ARTIFACTORY_IDENTITY_TOKEN` | Artifactory → Profile → Settings → API Token |
+| DataDog | `DATADOG_API_KEY`, `DATADOG_APP_KEY` | DataDog → Organization settings → API keys |
 
 Open the **API Keys+** tab (🔑) inside PlatformGen to add or update any credential.
 
@@ -106,10 +69,9 @@ Open the **API Keys+** tab (🔑) inside PlatformGen to add or update any creden
 ## Updating PlatformGen
 
 ```bash
-cd ~/projects/platformgen-py
+cd platformgen-py
 git pull
-docker rm -f platformgen-platform
-bash scripts/platformgen-launch.sh
+python3 scripts/install_wizard.py
 ```
 
 ---
@@ -118,11 +80,10 @@ bash scripts/platformgen-launch.sh
 
 | Problem | Fix |
 |---------|-----|
-| Window doesn't appear | `xhost +local:docker` then re-run |
-| `couldn't connect to display` | `export DISPLAY=:0` then re-run |
-| Container exits immediately | `docker logs platformgen-platform` |
-| Ask Genny not responding | Check `GH_TOKEN` in API Keys+ — must be github.com token |
-| Artifactory login failed | Use Identity Token (not password); API key is legacy only |
+| `DISPLAY` not set | `export DISPLAY=:0` (or `:1` for NICE DCV) |
+| Ask Genny not responding | Check `GH_TOKEN` in API Keys+ — must be github.com token (not enterprise) |
+| Missing `python3-tk` | `sudo apt-get install python3-tk` (Linux) or `brew install python-tk` (macOS) |
+| Permission denied on `genny` command | Log out and back in, or run: `export PATH="$HOME/.local/bin:$PATH"` |
 
 Full install guide: `INSTALLATION_GUIDE.md`  
 Alpha testing tasks: `ALPHA_TESTING.md`
