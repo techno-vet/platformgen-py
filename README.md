@@ -10,7 +10,7 @@
 
 ## What Can You Build?
 
-✅ **Ask Auger** — SRE Dashboard (built WITH platformgen)  
+✅ **Ask Genny** — SRE Dashboard (built WITH platformgen)  
 ✅ **OpenJuke** — Music/Media Platform (built WITH platformgen)  
 ✅ **Custom Dashboards** — Any business domain  
 ✅ **Internal Tools** — Microservices, APIs, monitoring  
@@ -40,9 +40,9 @@
 
 ## Alpha Testing
 
-**Status**: Alpha 0.1.0 (February 2026)
+**Status**: Alpha 0.1.0 (August 2026)
 
-✅ **What works**: CLI, Ask Auger, GitHub widget, configuration management  
+✅ **What works**: CLI (genny init/start), Ask Genny, GitHub widget, configuration management  
 ⚠️ **Partial**: ServiceNow (needs cookies), DataDog (needs keys)  
 ❌ **Not ready**: Cryptkeeper, Database, Panner widgets
 
@@ -50,9 +50,9 @@
 
 ---
 
-## Quick Start: Ask Auger (SRE Example)
+## Quick Start: Ask Genny (SRE Example)
 
-### Option 1: Python venv (Recommended)
+### Python venv (Recommended for all platforms: Linux, macOS, Windows)
 
 ```bash
 git clone https://github.com/techno-vet/platformgen-py.git
@@ -62,8 +62,8 @@ bash install.sh
 
 Then initialize and start:
 ```bash
-auger init --token YOUR_GITHUB_COPILOT_TOKEN
-auger start
+genny init --token YOUR_GITHUB_COPILOT_TOKEN
+genny start
 ```
 
 **Requires:** Python 3.10+, `python3-tk` (X11 display for UI)
@@ -74,15 +74,12 @@ sudo apt-get install python3-tk
 
 # macOS
 brew install python-tk
+
+# Windows
+# No extra setup needed (tkinter ships with Python)
 ```
 
-### Option 2: Docker
-
-```bash
-bash scripts/auger-setup.sh
-```
-
-Automatically handles X11 display, volume mounts, token setup, and image pulling.
+The installer handles venv setup, all dependencies, and shell integration (adds `genny` to PATH).
 
 ## Open Source + Commercial
 
@@ -138,29 +135,24 @@ Automatically handles X11 display, volume mounts, token setup, and image pulling
 
 ```bash
 # Dual-mode usage:
-auger                   # Open ask prompt (GUI)
-auger "your question"   # Quick ask (terminal)
+genny                   # Open Ask Genny prompt (GUI)
+genny "your question"   # Quick Genny query (terminal)
 
 # Platform commands:
-auger init              # Initialize configuration
-auger start             # Launch GUI
-auger doctor            # Run diagnostics
-auger config            # Show configuration
-auger widgets           # List available widgets
-auger test <integration> # Test integration (github, datadog, servicenow)
+genny init              # Initialize configuration
+genny start             # Launch GUI
+genny doctor            # Run diagnostics
 ```
 
-**New!** `auger` without subcommands acts as quick Copilot wrapper.
-
-See also: [Auger Ask Documentation](docs/AUGER_ASK.md)
+**Quick Copilot wrapper:** `genny` without subcommands opens interactive chat with GitHub Copilot.
 
 ---
 
 ## Support
 
-- **Issues:** https://github.helix.gsa.gov/assist/auger-ai-sre-platform/issues
-- **Ask Auger:** Open the chat panel for help!
+- **Issues:** https://github.com/techno-vet/platformgen-py/issues
+- **Ask Genny:** Open the chat panel for help!
 
 ---
 
-**Made with ❤️ by the GSA ASSIST Team**
+**Made with ❤️ by the PlatformGen Team**
