@@ -52,12 +52,12 @@
 
 ## Quick Start: Ask Genny (SRE Example)
 
-### Python venv (Recommended for all platforms: Linux, macOS, Windows)
+### Universal installer (Linux, macOS, Windows)
 
 ```bash
 git clone https://github.com/techno-vet/platformgen-py.git
 cd platformgen-py
-bash install.sh
+python3 scripts/install_wizard.py
 ```
 
 The installer will:
@@ -74,12 +74,10 @@ genny start
 
 **System Requirements:** Python 3.10+, X11 display (for UI rendering)
 
-**Pre-install setup (if running on Ubuntu/Debian without python3-tk):**
+**Optional pre-install setup (Ubuntu/Debian only, installer handles this automatically):**
 ```bash
 sudo apt-get install python3-tk
 ```
-
-**Note for Windows users:** Use `python3 scripts/install_wizard.py` instead of `bash install.sh`
 
 ## Open Source + Commercial
 
