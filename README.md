@@ -60,26 +60,26 @@ cd platformgen-py
 bash install.sh
 ```
 
-Then initialize and start:
+The installer will:
+1. ✅ Create Python venv in `~/.platformgen/`
+2. ✅ Install all dependencies (including `python3-tk`)
+3. ✅ **Prompt for your GitHub Copilot token** (required for Ask Genny)
+4. ✅ Add `genny` command to your PATH
+5. ✅ Optionally install GitHub Copilot CLI
+
+Once installed, simply start the app:
 ```bash
-genny init --token YOUR_GITHUB_COPILOT_TOKEN
 genny start
 ```
 
-**Requires:** Python 3.10+, `python3-tk` (X11 display for UI)
+**System Requirements:** Python 3.10+, X11 display (for UI rendering)
 
+**Pre-install setup (if running on Ubuntu/Debian without python3-tk):**
 ```bash
-# Linux
 sudo apt-get install python3-tk
-
-# macOS
-brew install python-tk
-
-# Windows
-# No extra setup needed (tkinter ships with Python)
 ```
 
-The installer handles venv setup, all dependencies, and shell integration (adds `genny` to PATH).
+**Note for Windows users:** Use `python3 scripts/install_wizard.py` instead of `bash install.sh`
 
 ## Open Source + Commercial
 
