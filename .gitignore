@@ -68,3 +68,10 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 node_modules
+
+# Google Chat configuration (contains PII and secret API keys)
+# DO NOT COMMIT - store locally only
+config/gchat_webhooks.yaml
+config/gchat_users.yaml
+auger/data/gchat_webhooks.yaml
+auger/data/gchat_users.yaml
